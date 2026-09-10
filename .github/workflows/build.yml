@@ -3,7 +3,8 @@ name: Build unsigned IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
@@ -14,30 +15,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          brew install xcodegen
 
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          xcodegen generate
+          test -f iStore.xcodeproj/project.pbxproj
+
+      - name: Show available schemes
+        run: |
+          xcodebuild \
+            -project iStore.xcodeproj \
+            -list
 
       - name: Build unsigned archive
-        run: >-
-          xcodebuild
-          -project ForgeSignMobile.xcodeproj
-          -scheme ForgeSignMobile
-          -configuration Release
-          -sdk iphoneos
-          -destination 'generic/platform=iOS'
-          -archivePath "$RUNNER_TEMP/ForgeSignMobile.xcarchive"
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          archive
+        run: |
+          xcodebuild \
+            -project iStore.xcodeproj \
+            -scheme iStore \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/iStore.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+
+      - name: Verify archive
+        run: |
+          test -d "$RUNNER_TEMP/iStore.xcarchive"
+          test -d "$RUNNER_TEMP/iStore.xcarchive/Products/Applications/iStore.app"
 
       - name: Package IPA
         run: |
+          rm -rf Payload
           mkdir -p Payload
-          cp -R "$RUNNER_TEMP/ForgeSignMobile.xcarchive/Products/Applications/iStore.app" Payload/
+
+          cp -R \
+            "$RUNNER_TEMP/iStore.xcarchive/Products/Applications/iStore.app" \
+            Payload/iStore.app
+
           zip -qry iStore-unsigned.ipa Payload
+
+          test -f iStore-unsigned.ipa
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
