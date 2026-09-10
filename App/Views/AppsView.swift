@@ -69,7 +69,7 @@ struct AppsView: View {
                 .background { ForgeBackdrop() }
                 .toolbar(.hidden, for: .navigationBar)
                 .overlay(alignment: .top) {
-                    // تدرج لوني خفيف من الأعلى للأسفل
+                    // تدرجلوني خفيف من الأعلى للأسفل
                     LinearGradient(
                         colors: [
                             Color.purple.opacity(0.15),
