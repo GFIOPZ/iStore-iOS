@@ -40,9 +40,6 @@ struct AppsView: View {
                             if displayedApps.isEmpty {
                                 emptyState
                             } else {
-                                // Do not nest a LazyVStack inside the section's
-                                // lazy container: nested lazy layout can preserve
-                                // stale row positions while filtering.
                                 ForEach(displayedApps.indices, id: \.self) { index in
                                     appRow(displayedApps[index])
                                         .padding(.horizontal, T.pad)
@@ -59,7 +56,8 @@ struct AppsView: View {
                                     .padding(.horizontal, T.pad)
                                     .padding(.vertical, 8)
                             }
-                            .background(T.bg.opacity(T.isDark ? 0.90 : 0.94))
+                            // تغيير لون خلفية الهيدر لتكون بيضاء بلمسة شفافة
+                            .background(Color.white.opacity(T.isDark ? 0.05 : 0.94))
                             .zIndex(2)
                         }
                     }
@@ -71,10 +69,11 @@ struct AppsView: View {
                 .background { ForgeBackdrop() }
                 .toolbar(.hidden, for: .navigationBar)
                 .overlay(alignment: .top) {
+                    // تدرج لوني خفيف من الأعلى للأسفل
                     LinearGradient(
                         colors: [
-                            T.bg.opacity(0.98),
-                            T.bg.opacity(0.72),
+                            Color.purple.opacity(0.15),
+                            Color.white.opacity(0.8),
                             .clear
                         ],
                         startPoint: .top,
@@ -145,24 +144,23 @@ struct AppsView: View {
         }
     }
 
+    // هنا قمنا بتعديل العنوان ليصبح "Zed Store" باللون البنفسجي
     private var titleHeader: some View {
         let isArabic = languageCode == AppLanguage.arabic.rawValue
-        return Text(isArabic ? "التطبيقات" : "Apps")
-            .font(T.sans(32, .bold))
-            .foregroundColor(T.ink)
-            // Use the selected language as the source of truth. The parent
-            // layout direction can be LTR while the app language is Arabic.
+        return Text("Zed Store")
+            // استخدام خط Serif احترافي لاسم المتجر
+            .font(.custom("Georgia-Bold", size: 36))
+            // تغيير لون العنوان إلى البنفسجي
+            .foregroundColor(Color(UIColor.systemPurple))
             .frame(maxWidth: .infinity, alignment: isArabic ? .trailing : .leading)
             .padding(.horizontal, T.pad)
             .padding(.top, 24)
             .padding(.bottom, 16)
-            // Soft App Store-style separation: a blurred fade keeps the pinned
-            // title readable without creating a hard horizontal edge above search.
             .background {
                 LinearGradient(
                     colors: [
-                        T.bg.opacity(T.isDark ? 0.96 : 0.92),
-                        T.bg.opacity(T.isDark ? 0.68 : 0.56),
+                        Color.white.opacity(T.isDark ? 0.1 : 0.92),
+                        Color.white.opacity(T.isDark ? 0.0 : 0.56),
                         .clear
                     ],
                     startPoint: .top,
@@ -174,8 +172,6 @@ struct AppsView: View {
                 .padding(.bottom, -8)
                 .allowsHitTesting(false)
             }
-            // Keep the title's physical placement stable: Arabic text remains
-            // Arabic, while trailing maps to the right edge of the screen.
             .environment(\.layoutDirection, .leftToRight)
     }
 
@@ -189,13 +185,15 @@ struct AppsView: View {
                 searchField
             }
         }
-        // Keep the explicit semantic order above from being mirrored a second time.
         .environment(\.layoutDirection, .leftToRight)
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .fMilkGlass(
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-            interactive: true
+        // إعطاء خلفية بيضاء مع إطار بنفسجي خفيف لشريط البحث
+        .background(Color.white.opacity(T.isDark ? 0.2 : 0.8))
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color(UIColor.systemPurple).opacity(0.3), lineWidth: 1)
         )
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: languageCode)
     }
@@ -206,7 +204,8 @@ struct AppsView: View {
         } label: {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .bold))
-                .foregroundColor(T.isDark ? .white : .black)
+                // لون أيقونة البحث بنفسجي
+                .foregroundColor(Color(UIColor.systemPurple))
                 .frame(width: 30, height: 30, alignment: .center)
                 .contentShape(Rectangle())
         }
@@ -223,7 +222,8 @@ struct AppsView: View {
             if searchText.isEmpty {
                 Text(placeholder)
                     .font(T.sans(15, .bold))
-                    .foregroundColor(T.isDark ? .white.opacity(0.48) : .black.opacity(0.28))
+                    // لون النص الإرشادي بنفسجي فاتح
+                    .foregroundColor(Color(UIColor.systemPurple).opacity(0.5))
                     .frame(maxWidth: .infinity, alignment: frameAlignment)
                     .allowsHitTesting(false)
             }
@@ -231,7 +231,8 @@ struct AppsView: View {
             TextField("", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(T.sans(15, .bold))
-                .foregroundColor(T.isDark ? .white : .black)
+                // لون النص عند الكتابة بنفسجي غامق
+                .foregroundColor(T.isDark ? .white : Color(UIColor.systemPurple))
                 .multilineTextAlignment(textAlignment)
                 .frame(maxWidth: .infinity, alignment: frameAlignment)
                 .textInputAutocapitalization(.never)
@@ -248,7 +249,7 @@ struct AppsView: View {
         VStack(spacing: T.gap) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 20))
-                .foregroundColor(T.ink3)
+                .foregroundColor(Color(UIColor.systemPurple))
             Text(languageCode == AppLanguage.arabic.rawValue ? "لا توجد تطبيقات بعد" : "No apps yet")
                 .font(T.sans(15, .medium))
                 .foregroundColor(T.ink)
@@ -260,7 +261,7 @@ struct AppsView: View {
         .fGlass(cornerRadius: 16)
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(T.rule, lineWidth: AppStroke.hairline)
+                .stroke(Color(UIColor.systemPurple).opacity(0.2), lineWidth: 1)
         }
         .padding(.horizontal, T.pad)
         .padding(.top, 24)
@@ -291,7 +292,10 @@ struct AppsView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
-        .glassSurface(.card, cornerRadius: 18)
+        // بطاقة التطبيق بخلفية بيضاء نقية مع ظل خفيف (يمكنك تعديل glassSurface إذا كان مخصصاً)
+        .background(Color.white)
+        .cornerRadius(18)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
     private func getButton(_ app: RepoApp) -> some View {
@@ -305,9 +309,6 @@ struct AppsView: View {
             if repositories.activeInstallID == app.id {
                 repositories.cancelInstallAttempt(app.id)
             } else {
-                // The primary button always means a normal installation. The
-                // explicit second-copy action lives in the detail sheet so a stale
-                // local record can never change this button's meaning.
                 repositories.clearInstalled(app.id)
                 Task { await repositories.download(app) }
             }
