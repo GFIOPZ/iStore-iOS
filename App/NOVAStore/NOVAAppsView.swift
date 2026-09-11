@@ -1,13 +1,16 @@
 import SwiftUI
 import UIKit
 
+/// "التطبيقات" tab — aggregates every added source (RepositoryStore) into one
+/// searchable, professionally-styled list with a direct install pill per row
+/// (purple gradient, animated on press) instead of the old plain white rows.
 struct NOVAAppsView: View {
 
     @EnvironmentObject private var store: RepositoryStore
+    @StateObject private var manualApps = NOVAStoreService.shared
     @State private var searchText = ""
     @State private var selectedApp: RepoApp?
     @State private var isRefreshing = false
-    @State private var didInitialRefresh = false // تمنع التحميل المتكرر عند التنقل
 
     // MARK: - Palette
 
@@ -19,17 +22,21 @@ struct NOVAAppsView: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
+    /// Every app from every added source, PLUS every enabled app added
+    /// manually via the admin control panel — merged into one list, de-duplicated
+    /// by bundle id and sorted alphabetically.
     private var allApps: [RepoApp] {
         var seen = Set<String>()
         var result: [RepoApp] = []
         for repo in store.repositories {
             guard let apps = store.catalog[repo.id]?.apps else { continue }
-            for app in apps {
-                if !seen.contains(app.id) {
-                    seen.insert(app.id)
-                    result.append(app)
-                }
+            for app in apps where seen.insert(app.id).inserted {
+                result.append(app)
             }
+        }
+        for novaApp in manualApps.apps where novaApp.enabled {
+            let app = RepoApp(novaApp: novaApp)
+            if seen.insert(app.id).inserted { result.append(app) }
         }
         return result.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -40,10 +47,9 @@ struct NOVAAppsView: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return allApps }
         return allApps.filter { app in
-            let searchString = [app.name, app.developerName, app.localizedDescription]
-                .compactMap { $0 }
-                .joined(separator: " ")
-            return searchString.localizedCaseInsensitiveContains(q)
+            app.name.localizedCaseInsensitiveContains(q) ||
+            (app.developerName?.localizedCaseInsensitiveContains(q) ?? false) ||
+            (app.localizedDescription?.localizedCaseInsensitiveContains(q) ?? false)
         }
     }
 
@@ -55,7 +61,7 @@ struct NOVAAppsView: View {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
 
-                if isLoadingInitially && !didInitialRefresh {
+                if isLoadingInitially {
                     ProgressView("جاري تحميل التطبيقات...")
                         .tint(gradientStart)
 
@@ -95,19 +101,9 @@ struct NOVAAppsView: View {
                 placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: "ابحث عن تطبيق"
             )
-            .task { 
-                guard !didInitialRefresh else { return }
-                
-                // انتظار تحميل الكاش من المصادر
-                while !store.catalogCacheLoaded {
-                    try? await Task.sleep(nanoseconds: 20_000_000)
-                }
-                
-                if allApps.isEmpty { 
-                    await refreshAll() 
-                }
-                
-                didInitialRefresh = true
+            .task {
+                if manualApps.apps.isEmpty { await manualApps.refresh() }
+                if allApps.isEmpty { await refreshAll() }
             }
             .sheet(item: $selectedApp) { app in
                 RepoAppDetailSheet(app: app)
@@ -116,6 +112,8 @@ struct NOVAAppsView: View {
         .tint(gradientStart)
     }
 
+    /// Refreshes every added repository concurrently. One failing source
+    /// never blocks the others — each repo keeps its own fetchError.
     private func refreshAll() async {
         isRefreshing = true
         defer { isRefreshing = false }
@@ -152,6 +150,7 @@ struct NOVAAppsView: View {
     @ViewBuilder
     private func appRow(_ app: RepoApp) -> some View {
         HStack(spacing: 12) {
+            // Tapping the icon/name area opens full details.
             Button {
                 Haptics.tap()
                 selectedApp = app
@@ -235,6 +234,8 @@ struct NOVAAppsView: View {
 
 // MARK: - Press animation
 
+/// Scales + fades any button on press for a tactile, "alive" feel, and lets
+/// callers pair it with a haptic tap in the action closure.
 private struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -251,4 +252,9 @@ private enum Haptics {
     static func impact() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
+}
+
+#Preview {
+    NOVAAppsView()
+        .environmentObject(RepositoryStore())
 }
