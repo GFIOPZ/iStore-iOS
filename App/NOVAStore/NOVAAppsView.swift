@@ -3,10 +3,11 @@ import UIKit
 
 struct NOVAAppsView: View {
 
-    @StateObject private var store = NOVAStoreService.shared
+    @EnvironmentObject private var store: RepositoryStore
     @State private var searchText = ""
-    @State private var selectedApp: NOVAApp?
+    @State private var selectedApp: RepoApp?
     @State private var isRefreshing = false
+    @State private var didInitialRefresh = false // تمنع التحميل المتكرر عند التنقل
 
     // MARK: - Palette
 
@@ -18,39 +19,60 @@ struct NOVAAppsView: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private var filteredApps: [NOVAApp] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return store.apps }
-        return store.apps.filter { app in
-            app.name.localizedCaseInsensitiveContains(q) ||
-            app.subtitle.localizedCaseInsensitiveContains(q) ||
-            app.description.localizedCaseInsensitiveContains(q)
+    private var allApps: [RepoApp] {
+        var seen = Set<String>()
+        var result: [RepoApp] = []
+        for repo in store.repositories {
+            guard let apps = store.catalog[repo.id]?.apps else { continue }
+            for app in apps {
+                if !seen.contains(app.id) {
+                    seen.insert(app.id)
+                    result.append(app)
+                }
+            }
+        }
+        return result.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 
-    private var isLoadingInitially: Bool { store.isLoading && store.apps.isEmpty }
+    private var filteredApps: [RepoApp] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return allApps }
+        return allApps.filter { app in
+            let searchString = [app.name, app.developerName, app.localizedDescription]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            return searchString.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var hasAnyRepositories: Bool { !store.repositories.isEmpty }
+    private var isLoadingInitially: Bool { isRefreshing && allApps.isEmpty }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
 
-                if isLoadingInitially {
+                if isLoadingInitially && !didInitialRefresh {
                     ProgressView("جاري تحميل التطبيقات...")
                         .tint(gradientStart)
 
-                } else if store.apps.isEmpty {
+                } else if !hasAnyRepositories {
                     emptyState(
-                        icon: "square.grid.2x2",
-                        title: "لا توجد تطبيقات حالياً",
-                        message: "قم بإضافة تطبيقات من لوحة التحكم لتظهر هنا."
+                        icon: "shippingbox",
+                        title: "لا توجد مصادر مضافة",
+                        message: "أضف مصدرًا من قسم \"المصادر\" لتظهر تطبيقاته هنا تلقائيًا."
                     )
 
                 } else if filteredApps.isEmpty {
                     emptyState(
-                        icon: "magnifyingglass",
-                        title: "لا توجد نتائج",
-                        message: "جرّب البحث باسم تطبيق آخر."
+                        icon: "square.grid.2x2",
+                        title: searchText.isEmpty ? "لا توجد تطبيقات حالياً" : "لا توجد نتائج",
+                        message: searchText.isEmpty
+                            ? "اسحب للأسفل لتحديث المصادر."
+                            : "جرّب البحث باسم تطبيق آخر."
                     )
 
                 } else {
@@ -73,9 +95,22 @@ struct NOVAAppsView: View {
                 placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: "ابحث عن تطبيق"
             )
-            .task { if store.apps.isEmpty { await refreshAll() } }
+            .task { 
+                guard !didInitialRefresh else { return }
+                
+                // انتظار تحميل الكاش من المصادر
+                while !store.catalogCacheLoaded {
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                }
+                
+                if allApps.isEmpty { 
+                    await refreshAll() 
+                }
+                
+                didInitialRefresh = true
+            }
             .sheet(item: $selectedApp) { app in
-                NOVAAppDetailView(app: app)
+                RepoAppDetailSheet(app: app)
             }
         }
         .tint(gradientStart)
@@ -84,7 +119,11 @@ struct NOVAAppsView: View {
     private func refreshAll() async {
         isRefreshing = true
         defer { isRefreshing = false }
-        await store.refresh(force: true)
+        await withTaskGroup(of: Void.self) { group in
+            for repo in store.repositories {
+                group.addTask { await store.refresh(repo) }
+            }
+        }
     }
 
     @ViewBuilder
@@ -111,14 +150,14 @@ struct NOVAAppsView: View {
     // MARK: - Row
 
     @ViewBuilder
-    private func appRow(_ app: NOVAApp) -> some View {
+    private func appRow(_ app: RepoApp) -> some View {
         HStack(spacing: 12) {
             Button {
                 Haptics.tap()
                 selectedApp = app
             } label: {
                 HStack(spacing: 12) {
-                    CachedAppIcon(url: URL(string: app.icon), size: 54, cornerRadius: 14)
+                    CachedAppIcon(url: app.iconURL, size: 54, cornerRadius: 14)
                         .overlay {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(brandGradient.opacity(0.35), lineWidth: 1)
@@ -131,12 +170,12 @@ struct NOVAAppsView: View {
                             .lineLimit(1)
 
                         HStack(spacing: 6) {
-                            if !app.version.isEmpty {
-                                Text("v\(app.version)")
+                            if let version = app.version, !version.isEmpty {
+                                Text("v\(version)")
                             }
-                            if !app.size.isEmpty {
+                            if let size = app.size {
                                 Text("•")
-                                Text(app.size)
+                                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                             }
                         }
                         .font(.system(size: 11.5, weight: .medium))
@@ -164,26 +203,32 @@ struct NOVAAppsView: View {
     }
 
     @ViewBuilder
-    private func installPill(_ app: NOVAApp) -> some View {
-        let urlString = app.ipaURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let url = URL(string: urlString), !urlString.isEmpty {
-            Link(destination: url) {
+    private func installPill(_ app: RepoApp) -> some View {
+        if store.activeDownloadID == app.id {
+            ProgressView()
+                .tint(.white)
+                .frame(width: 78, height: 34)
+                .background(brandGradient)
+                .clipShape(Capsule())
+        } else {
+            Button {
+                Haptics.impact()
+                Task { await store.download(app) }
+            } label: {
                 Text("تثبيت")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 78, height: 34)
-                    .background(brandGradient)
+                    .background(
+                        app.downloadURL == nil
+                            ? AnyShapeStyle(Color.gray.opacity(0.4))
+                            : AnyShapeStyle(brandGradient)
+                    )
                     .clipShape(Capsule())
-                    .shadow(color: gradientStart.opacity(0.35), radius: 6, y: 3)
+                    .shadow(color: gradientStart.opacity(app.downloadURL == nil ? 0 : 0.35), radius: 6, y: 3)
             }
             .buttonStyle(PressableStyle())
-        } else {
-            Text("غير متوفر")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 78, height: 34)
-                .background(Color.gray.opacity(0.4))
-                .clipShape(Capsule())
+            .disabled(app.downloadURL == nil || store.activeDownloadID != nil)
         }
     }
 }
@@ -206,8 +251,4 @@ private enum Haptics {
     static func impact() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-}
-
-#Preview {
-    NOVAAppsView()
 }
