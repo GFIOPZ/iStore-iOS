@@ -1,10 +1,9 @@
 import SwiftUI
+import UIKit
 
-/// "التطبيقات" tab — no longer depends on the separate NOVA-STORE control
-/// panel (apps.json). Instead it aggregates the catalogs of every repository
-/// already added in RepositoryStore (AppTesters, SwiftSource, etc.) into one
-/// searchable list, exactly like the existing per-source browser in
-/// SourcesView, just merged across all sources.
+/// "التطبيقات" tab — aggregates every added source (RepositoryStore) into one
+/// searchable, professionally-styled list with a direct install pill per row
+/// (purple gradient, animated on press) instead of the old plain white rows.
 struct NOVAAppsView: View {
 
     @EnvironmentObject private var store: RepositoryStore
@@ -12,8 +11,18 @@ struct NOVAAppsView: View {
     @State private var selectedApp: RepoApp?
     @State private var isRefreshing = false
 
-    /// Every app from every added source, de-duplicated by bundle id (or name
-    /// when the id is empty) and sorted alphabetically.
+    // MARK: - Palette
+
+    private let gradientStart = Color(hex: "7C3AED")
+    private let gradientEnd = Color(hex: "A855F7")
+
+    private var brandGradient: LinearGradient {
+        LinearGradient(colors: [gradientStart, gradientEnd],
+                        startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Every app from every added source, de-duplicated by bundle id and
+    /// sorted alphabetically.
     private var allApps: [RepoApp] {
         var seen = Set<String>()
         var result: [RepoApp] = []
@@ -39,10 +48,7 @@ struct NOVAAppsView: View {
     }
 
     private var hasAnyRepositories: Bool { !store.repositories.isEmpty }
-
-    private var isLoadingInitially: Bool {
-        isRefreshing && allApps.isEmpty
-    }
+    private var isLoadingInitially: Bool { isRefreshing && allApps.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -51,6 +57,7 @@ struct NOVAAppsView: View {
 
                 if isLoadingInitially {
                     ProgressView("جاري تحميل التطبيقات...")
+                        .tint(gradientStart)
 
                 } else if !hasAnyRepositories {
                     emptyState(
@@ -72,15 +79,12 @@ struct NOVAAppsView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(filteredApps) { app in
-                                Button {
-                                    selectedApp = app
-                                } label: {
-                                    appRow(app)
-                                }
-                                .buttonStyle(.plain)
+                                appRow(app)
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                        .padding(.bottom, 20)
                     }
                     .refreshable { await refreshAll() }
                 }
@@ -91,13 +95,12 @@ struct NOVAAppsView: View {
                 placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: "ابحث عن تطبيق"
             )
-            .task {
-                if allApps.isEmpty { await refreshAll() }
-            }
+            .task { if allApps.isEmpty { await refreshAll() } }
             .sheet(item: $selectedApp) { app in
                 RepoAppDetailSheet(app: app)
             }
         }
+        .tint(gradientStart)
     }
 
     /// Refreshes every added repository concurrently. One failing source
@@ -114,13 +117,16 @@ struct NOVAAppsView: View {
 
     @ViewBuilder
     private func emptyState(icon: String, title: String, message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 42))
-                .foregroundStyle(.secondary)
-
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(brandGradient.opacity(0.14))
+                    .frame(width: 84, height: 84)
+                Image(systemName: icon)
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(brandGradient)
+            }
             Text(title).font(.headline)
-
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -130,49 +136,112 @@ struct NOVAAppsView: View {
         .padding()
     }
 
+    // MARK: - Row
+
     @ViewBuilder
     private func appRow(_ app: RepoApp) -> some View {
-        HStack(spacing: 14) {
-            CachedAppIcon(url: app.iconURL, size: 64, cornerRadius: 16)
+        HStack(spacing: 12) {
+            // Tapping the icon/name area opens full details.
+            Button {
+                Haptics.tap()
+                selectedApp = app
+            } label: {
+                HStack(spacing: 12) {
+                    CachedAppIcon(url: app.iconURL, size: 54, cornerRadius: 14)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(brandGradient.opacity(0.35), lineWidth: 1)
+                        }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(app.name)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.name)
+                            .font(.system(size: 15.5, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
 
-                if let dev = app.developerName, !dev.isEmpty {
-                    Text(dev)
-                        .font(.subheadline)
+                        HStack(spacing: 6) {
+                            if let version = app.version, !version.isEmpty {
+                                Text("v\(version)")
+                            }
+                            if let size = app.size {
+                                Text("•")
+                                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                            }
+                        }
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 8) {
-                    if let version = app.version, !version.isEmpty {
-                        Text("v\(version)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    if let size = app.size {
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
                     }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(PressableStyle())
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            Image(systemName: "chevron.left")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
+            installPill(app)
         }
-        .padding(14)
+        .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+                .fill(.thickMaterial)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(brandGradient.opacity(0.16), lineWidth: 1)
+        }
+        .shadow(color: gradientStart.opacity(0.08), radius: 10, y: 4)
+    }
+
+    @ViewBuilder
+    private func installPill(_ app: RepoApp) -> some View {
+        if store.activeDownloadID == app.id {
+            ProgressView()
+                .tint(.white)
+                .frame(width: 78, height: 34)
+                .background(brandGradient)
+                .clipShape(Capsule())
+        } else {
+            Button {
+                Haptics.impact()
+                Task { await store.download(app) }
+            } label: {
+                Text("تثبيت")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 78, height: 34)
+                    .background(
+                        app.downloadURL == nil
+                            ? AnyShapeStyle(Color.gray.opacity(0.4))
+                            : AnyShapeStyle(brandGradient)
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: gradientStart.opacity(app.downloadURL == nil ? 0 : 0.35), radius: 6, y: 3)
+            }
+            .buttonStyle(PressableStyle())
+            .disabled(app.downloadURL == nil || store.activeDownloadID != nil)
+        }
+    }
+}
+
+// MARK: - Press animation
+
+/// Scales + fades any button on press for a tactile, "alive" feel, and lets
+/// callers pair it with a haptic tap in the action closure.
+private struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.62), value: configuration.isPressed)
+    }
+}
+
+private enum Haptics {
+    static func tap() {
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+    static func impact() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 }
 
