@@ -41,15 +41,13 @@ struct NOVAHomeView: View {
                     }
                     .refreshable {
                         await store.refresh(force: true)
+                        syncSources()
                     }
                 }
             }
             .navigationBarHidden(true)
             .task {
                 await store.refresh()
-                syncSources()
-            }
-            .onChange(of: store.sources) { _, _ in
                 syncSources()
             }
             .sheet(item: $selectedBanner) { banner in
@@ -79,6 +77,7 @@ struct NOVAHomeView: View {
             Button {
                 Task {
                     await store.refresh(force: true)
+                    syncSources()
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -329,10 +328,20 @@ struct NOVAHomeView: View {
     private func bannerDestination(_ banner: NOVABanner) -> some View {
         if let app = store.app(id: banner.appID) {
             NOVAAppDetailView(app: app)
-        } else {
+        } else if !banner.externalURL.isEmpty {
             BannerExternalDestination(
                 urlString: banner.externalURL
             )
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+                
+                Text("لا يوجد محتوى مرتبط بهذا البنر")
+                    .font(.headline)
+            }
+            .padding()
         }
     }
     
@@ -340,18 +349,25 @@ struct NOVAHomeView: View {
     
     private func syncSources() {
         for source in store.sources {
-            guard !source.repoURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let repoURL = source.repoURL.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            
+            guard !repoURL.isEmpty else {
                 continue
             }
             
-            if !repositories.repositories.contains(where: {
-                $0.url == source.repoURL
-            }) {
-                repositories.addRepository(
-                    name: source.name,
-                    url: source.repoURL
-                )
+            guard let url = URL(string: repoURL) else {
+                continue
             }
+            
+            guard !repositories.repositories.contains(where: {
+                $0.url == url
+            }) else {
+                continue
+            }
+            
+            _ = repositories.add(urlString: repoURL)
         }
     }
     
@@ -462,7 +478,8 @@ private struct BannerExternalDestination: View {
                 Text("فتح الرابط")
                     .font(.headline)
                 
-                if let url = URL(string: urlString), !urlString.isEmpty {
+                if let url = URL(string: urlString),
+                   !urlString.isEmpty {
                     Link("فتح", destination: url)
                         .buttonStyle(.borderedProminent)
                 } else {
