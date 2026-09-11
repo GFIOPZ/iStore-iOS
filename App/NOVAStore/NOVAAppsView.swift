@@ -1,84 +1,74 @@
 import SwiftUI
 
+/// "التطبيقات" tab — no longer depends on the separate NOVA-STORE control
+/// panel (apps.json). Instead it aggregates the catalogs of every repository
+/// already added in RepositoryStore (AppTesters, SwiftSource, etc.) into one
+/// searchable list, exactly like the existing per-source browser in
+/// SourcesView, just merged across all sources.
 struct NOVAAppsView: View {
-    
-    @StateObject private var store = NOVAStoreService.shared
+
+    @EnvironmentObject private var store: RepositoryStore
     @State private var searchText = ""
-    @State private var selectedApp: NOVAApp?
-    
-    private var filteredApps: [NOVAApp] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if q.isEmpty {
-            return store.apps
+    @State private var selectedApp: RepoApp?
+    @State private var isRefreshing = false
+
+    /// Every app from every added source, de-duplicated by bundle id (or name
+    /// when the id is empty) and sorted alphabetically.
+    private var allApps: [RepoApp] {
+        var seen = Set<String>()
+        var result: [RepoApp] = []
+        for repo in store.repositories {
+            guard let apps = store.catalog[repo.id]?.apps else { continue }
+            for app in apps where seen.insert(app.id).inserted {
+                result.append(app)
+            }
         }
-        
-        return store.apps.filter { app in
-            app.name.localizedCaseInsensitiveContains(q) ||
-            app.subtitle.localizedCaseInsensitiveContains(q) ||
-            app.description.localizedCaseInsensitiveContains(q)
+        return result.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
-    
+
+    private var filteredApps: [RepoApp] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return allApps }
+        return allApps.filter { app in
+            app.name.localizedCaseInsensitiveContains(q) ||
+            (app.developerName?.localizedCaseInsensitiveContains(q) ?? false) ||
+            (app.localizedDescription?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
+
+    private var hasAnyRepositories: Bool { !store.repositories.isEmpty }
+
+    private var isLoadingInitially: Bool {
+        isRefreshing && allApps.isEmpty
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                if store.isLoading && store.apps.isEmpty {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+
+                if isLoadingInitially {
                     ProgressView("جاري تحميل التطبيقات...")
-                    
-                } else if let error = store.errorMessage,
-                          store.apps.isEmpty {
-                    
-                    VStack(spacing: 14) {
-                        Image(systemName: "wifi.exclamationmark")
-                            .font(.system(size: 42))
-                        
-                        Text("تعذر تحميل التطبيقات")
-                            .font(.headline)
-                        
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        
-                        Button {
-                            Task {
-                                await store.refresh(force: true)
-                            }
-                        } label: {
-                            Label("إعادة المحاولة", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
-                    
+
+                } else if !hasAnyRepositories {
+                    emptyState(
+                        icon: "shippingbox",
+                        title: "لا توجد مصادر مضافة",
+                        message: "أضف مصدرًا من قسم \"المصادر\" لتظهر تطبيقاته هنا تلقائيًا."
+                    )
+
                 } else if filteredApps.isEmpty {
-                    
-                    VStack(spacing: 12) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 42))
-                            .foregroundStyle(.secondary)
-                        
-                        Text(
-                            searchText.isEmpty
-                            ? "لا توجد تطبيقات حالياً"
-                            : "لا توجد نتائج"
-                        )
-                        .font(.headline)
-                        
-                        if !searchText.isEmpty {
-                            Text("جرّب البحث باسم تطبيق آخر")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
+                    emptyState(
+                        icon: "square.grid.2x2",
+                        title: searchText.isEmpty ? "لا توجد تطبيقات حالياً" : "لا توجد نتائج",
+                        message: searchText.isEmpty
+                            ? "اسحب للأسفل لتحديث المصادر."
+                            : "جرّب البحث باسم تطبيق آخر."
+                    )
+
                 } else {
-                    
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(filteredApps) { app in
@@ -92,103 +82,101 @@ struct NOVAAppsView: View {
                         }
                         .padding(16)
                     }
-                    .refreshable {
-                        await store.refresh(force: true)
-                    }
+                    .refreshable { await refreshAll() }
                 }
             }
             .navigationTitle("NOVA STORE")
             .searchable(
                 text: $searchText,
-                placement: .navigationBarDrawer(
-                    displayMode: .automatic
-                ),
+                placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: "ابحث عن تطبيق"
             )
             .task {
-                await store.refresh()
+                if allApps.isEmpty { await refreshAll() }
             }
             .sheet(item: $selectedApp) { app in
-                NOVAAppDetailView(app: app)
+                RepoAppDetailSheet(app: app)
             }
         }
     }
-    
-    @ViewBuilder
-    private func appRow(_ app: NOVAApp) -> some View {
-        HStack(spacing: 14) {
-            
-            AsyncImage(url: URL(string: app.icon)) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                    
-                default:
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.secondary.opacity(0.12))
-                        
-                        Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+
+    /// Refreshes every added repository concurrently. One failing source
+    /// never blocks the others — each repo keeps its own fetchError.
+    private func refreshAll() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+        await withTaskGroup(of: Void.self) { group in
+            for repo in store.repositories {
+                group.addTask { await store.refresh(repo) }
             }
-            .frame(width: 64, height: 64)
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 16,
-                    style: .continuous
-                )
-            )
-            
+        }
+    }
+
+    @ViewBuilder
+    private func emptyState(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 42))
+                .foregroundStyle(.secondary)
+
+            Text(title).font(.headline)
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private func appRow(_ app: RepoApp) -> some View {
+        HStack(spacing: 14) {
+            CachedAppIcon(url: app.iconURL, size: 64, cornerRadius: 16)
+
             VStack(alignment: .leading, spacing: 5) {
                 Text(app.name)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                
-                if !app.subtitle.isEmpty {
-                    Text(app.subtitle)
+
+                if let dev = app.developerName, !dev.isEmpty {
+                    Text(dev)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
-                
+
                 HStack(spacing: 8) {
-                    if !app.version.isEmpty {
-                        Text("v\(app.version)")
+                    if let version = app.version, !version.isEmpty {
+                        Text("v\(version)")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
-                    
-                    if !app.size.isEmpty {
-                        Text(app.size)
+                    if let size = app.size {
+                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             Image(systemName: "chevron.left")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
         .padding(14)
         .background(
-            RoundedRectangle(
-                cornerRadius: 20,
-                style: .continuous
-            )
-            .fill(Color(.secondarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
         )
     }
 }
 
 #Preview {
     NOVAAppsView()
+        .environmentObject(RepositoryStore())
 }
