@@ -1,204 +1,179 @@
 import SwiftUI
+import UIKit
 
 struct NOVAHomeView: View {
-    @Environment(\.forgeTheme) private var T
-    @EnvironmentObject private var repositories: RepositoryStore
+    
     @StateObject private var store = NOVAStoreService.shared
-    @State private var selectedApp: NOVAApp?
+    @EnvironmentObject private var repositories: RepositoryStore
+    
     @State private var selectedBanner: NOVABanner?
-
-    private var language: AppLanguage {
-        AppLanguage(rawValue: UserDefaults.standard.string(forKey: "app.language") ?? AppLanguage.arabic.rawValue) ?? .arabic
-    }
-
+    @State private var selectedApp: NOVAApp?
+    
     private var latestApps: [NOVAApp] {
-        Array(
-            store.apps
-                .sorted { ($0.updatedAt ?? "") > ($1.updatedAt ?? "") }
-                .prefix(store.settings?.latestAppsLimit ?? 10)
-        )
+        let limit = store.settings?.latestAppsLimit ?? 10
+        return Array(store.apps.prefix(max(0, limit)))
     }
-
+    
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    header
-                    telegramCard
-
-                    if !store.banners.isEmpty {
-                        bannerCarousel
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                
+                if store.isLoading && store.apps.isEmpty {
+                    ProgressView("جاري تحميل NOVA STORE...")
+                } else {
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            header
+                            
+                            updatesChannelCard
+                            
+                            if !store.banners.isEmpty {
+                                bannersSection
+                            }
+                            
+                            latestAppsSection
+                            
+                            sourcesSection
+                        }
+                        .padding(.vertical, 16)
                     }
-
-                    latestSection
-
-                    if let error = store.errorMessage {
-                        errorCard(error)
+                    .refreshable {
+                        await store.refresh(force: true)
                     }
                 }
-                .padding(.horizontal, T.pad)
-                .padding(.top, 16)
-                .padding(.bottom, 34)
             }
-            .scrollIndicators(.hidden)
-            .background(ForgeBackdrop())
-            .toolbar(.hidden, for: .navigationBar)
-            .refreshable {
-                await store.refresh(force: true)
-            }
+            .navigationBarHidden(true)
             .task {
                 await store.refresh()
-                await syncExternalSources()
+                syncSources()
+            }
+            .onChange(of: store.sources) { _, _ in
+                syncSources()
+            }
+            .sheet(item: $selectedBanner) { banner in
+                bannerDestination(banner)
             }
             .sheet(item: $selectedApp) { app in
                 NOVAAppDetailView(app: app)
-                    .environmentObject(repositories)
             }
         }
     }
-
+    
+    // MARK: - Header
+    
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("NOVA STORE")
-                .font(.system(size: 36, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [T.accentHi, T.accent, T.accentDeep],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-
-            Text(language == .arabic ? "متجر التطبيقات والألعاب" : "Apps & Games Store")
-                .font(T.sans(13, .semibold))
-                .foregroundStyle(T.ink3)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var telegramCard: some View {
-        let channel = store.settings?.supportChannel ?? "https://t.me/ipafilesfor"
-
-        return Button {
-            guard let url = URL(string: channel) else { return }
-            UIApplication.shared.open(url)
-        } label: {
-            HStack(spacing: 13) {
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 19, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(T.accent, in: Circle())
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(language == .arabic ? "تابعونا على قناة التحديثات" : "Follow our updates channel")
-                        .font(T.sans(15, .bold))
-                        .foregroundStyle(T.ink)
-
-                    Text(language == .arabic ? "آخر الأخبار والتحديثات" : "News and updates")
-                        .font(T.sans(11, .medium))
-                        .foregroundStyle(T.ink3)
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(store.settings?.name ?? "NOVA STORE")
+                    .font(.system(size: 30, weight: .bold))
+                
+                Text("متجرك للتطبيقات والألعاب")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Button {
+                Task {
+                    await store.refresh(force: true)
                 }
-
-                Spacer()
-                Image(systemName: "chevron.left")
-                    .foregroundStyle(T.accent)
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 42, height: 42)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
             }
-            .padding(14)
-            .background(T.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(T.accent.opacity(0.16), lineWidth: 1)
-            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
     }
-
-    private var bannerCarousel: some View {
-        TabView(selection: $selectedBanner) {
-            ForEach(store.banners) { banner in
-                bannerCard(banner)
-                    .tag(Optional(banner))
-            }
-        }
-        .frame(height: 215)
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
-    }
-
-    private func bannerCard(_ banner: NOVABanner) -> some View {
+    
+    // MARK: - Telegram
+    
+    private var updatesChannelCard: some View {
         Button {
-            if let app = store.app(id: banner.appID) {
-                selectedApp = app
-            } else if let raw = banner.externalURL, let url = URL(string: raw) {
-                UIApplication.shared.open(url)
-            }
+            openSupportChannel()
         } label: {
-            ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: banner.image) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        Rectangle().fill(T.accent.opacity(0.15))
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.78)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-
+            HStack(spacing: 14) {
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .frame(width: 48, height: 48)
+                    .background(.blue.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(banner.title)
-                        .font(T.sans(20, .bold))
-                        .foregroundStyle(.white)
-
-                    if let description = banner.description, !description.isEmpty {
-                        Text(description)
-                            .font(T.sans(11, .medium))
-                            .foregroundStyle(.white.opacity(0.88))
-                            .lineLimit(2)
-                    }
-
-                    if let button = banner.buttonTitle, !button.isEmpty {
-                        Text(button)
-                            .font(T.sans(11, .bold))
-                            .foregroundStyle(T.accent)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.white, in: Capsule())
-                            .padding(.top, 3)
-                    }
+                    Text("تابعونا على قناة التحديثات")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("آخر الأخبار والتحديثات والعروض")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(15)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.left")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(16)
+            .background(
+                RoundedRectangle(
+                    cornerRadius: 22,
+                    style: .continuous
+                )
+                .fill(Color(.secondarySystemGroupedBackground))
+            )
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 16)
     }
-
-    private var latestSection: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                Text(language == .arabic ? "آخر التحديثات" : "Latest Updates")
-                    .font(T.sans(20, .bold))
-                    .foregroundStyle(T.ink)
-                Spacer()
-                Text("\(latestApps.count)")
-                    .font(T.mono(11, .bold))
-                    .foregroundStyle(T.accent)
+    
+    // MARK: - Banners
+    
+    private var bannersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("مميز")
+                .font(.title3.weight(.bold))
+                .padding(.horizontal, 16)
+            
+            TabView(selection: $selectedBanner) {
+                ForEach(store.banners) { banner in
+                    BannerCard(banner: banner) {
+                        selectedBanner = banner
+                    }
+                    .tag(Optional(banner))
+                    .padding(.horizontal, 16)
+                }
             }
-
+            .frame(height: 210)
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+        }
+    }
+    
+    // MARK: - Latest Apps
+    
+    private var latestAppsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("آخر التحديثات")
+                    .font(.title3.weight(.bold))
+                
+                Spacer()
+                
+                Text("\(latestApps.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            
             if latestApps.isEmpty {
-                Text(language == .arabic ? "لا توجد تطبيقات حالياً." : "No apps yet.")
-                    .font(T.sans(13, .medium))
-                    .foregroundStyle(T.ink3)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(30)
-                    .background(T.surface, in: RoundedRectangle(cornerRadius: 18))
+                emptyAppsView
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(latestApps) { app in
@@ -210,77 +185,300 @@ struct NOVAHomeView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, 16)
             }
         }
     }
-
+    
+    private var emptyAppsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            
+            Text("لا توجد تطبيقات حالياً")
+                .font(.headline)
+            
+            Text("ستظهر التطبيقات هنا عند إضافتها من لوحة التحكم.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+    }
+    
+    @ViewBuilder
     private func appRow(_ app: NOVAApp) -> some View {
-        HStack(spacing: 12) {
-            AsyncImage(url: app.iconURL) { phase in
+        HStack(spacing: 13) {
+            AsyncImage(url: URL(string: app.icon)) { phase in
                 switch phase {
                 case .success(let image):
-                    image.resizable().scaledToFill()
+                    image
+                        .resizable()
+                        .scaledToFill()
+                    
                 default:
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 19))
-                        .foregroundStyle(T.accent)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15)
+                            .fill(Color.secondary.opacity(0.12))
+                        
+                        Image(systemName: "app.fill")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .frame(width: 52, height: 52)
-            .background(T.accentSoft)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
+            .frame(width: 58, height: 58)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 15,
+                    style: .continuous
+                )
+            )
+            
+            VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
-                    .font(T.sans(15, .bold))
-                    .foregroundStyle(T.ink)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
-
-                if let subtitle = app.subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(T.sans(11, .medium))
-                        .foregroundStyle(T.ink3)
-                        .lineLimit(1)
+                
+                Text(app.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 7) {
+                    if !app.version.isEmpty {
+                        Text("v\(app.version)")
+                    }
+                    
+                    if !app.size.isEmpty {
+                        Text("•")
+                        Text(app.size)
+                    }
                 }
-
-                if let version = app.version {
-                    Text("v\(version)")
-                        .font(T.mono(10))
-                        .foregroundStyle(T.ink4)
-                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.tertiary)
             }
-
+            
             Spacer()
+            
             Image(systemName: "chevron.left")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(T.ink4)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
         }
-        .padding(12)
-        .background(T.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(T.accent.opacity(0.12), lineWidth: 1)
-        }
+        .padding(13)
+        .background(
+            RoundedRectangle(
+                cornerRadius: 19,
+                style: .continuous
+            )
+            .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
-
-    private func errorCard(_ error: String) -> some View {
-        Text(error)
-            .font(T.mono(10))
-            .foregroundStyle(T.bad)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(T.bad.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func syncExternalSources() async {
-        for source in store.sources {
-            guard source.type != "official",
-                  let url = URL(string: source.repoURL),
-                  !source.repoURL.isEmpty else { continue }
-
-            if !repositories.repositories.contains(where: { $0.url == url }) {
-                _ = repositories.add(urlString: source.repoURL)
+    
+    // MARK: - Sources
+    
+    private var sourcesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("المصادر")
+                .font(.title3.weight(.bold))
+                .padding(.horizontal, 16)
+            
+            if store.sources.isEmpty {
+                Text("لا توجد مصادر مفعلة")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(store.sources) { source in
+                            sourceCard(source)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
             }
         }
     }
+    
+    private func sourceCard(_ source: NOVASource) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "shippingbox.fill")
+                .font(.title3)
+            
+            Text(source.name)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+        }
+        .frame(width: 150, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(
+                cornerRadius: 18,
+                style: .continuous
+            )
+            .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+    
+    // MARK: - Banner Destination
+    
+    @ViewBuilder
+    private func bannerDestination(_ banner: NOVABanner) -> some View {
+        if let app = store.app(id: banner.appID) {
+            NOVAAppDetailView(app: app)
+        } else {
+            BannerExternalDestination(
+                urlString: banner.externalURL
+            )
+        }
+    }
+    
+    // MARK: - Sources Sync
+    
+    private func syncSources() {
+        for source in store.sources {
+            guard !source.repoURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+            
+            if !repositories.repositories.contains(where: {
+                $0.url == source.repoURL
+            }) {
+                repositories.addRepository(
+                    name: source.name,
+                    url: source.repoURL
+                )
+            }
+        }
+    }
+    
+    // MARK: - Support
+    
+    private func openSupportChannel() {
+        guard let value = store.settings?.supportChannel,
+              !value.isEmpty,
+              let url = URL(string: value) else {
+            return
+        }
+        
+        UIApplication.shared.open(url)
+    }
+}
+
+// MARK: - Banner Card
+
+private struct BannerCard: View {
+    let banner: NOVABanner
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .bottomLeading) {
+                AsyncImage(url: URL(string: banner.imageURL)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                        
+                    default:
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        .purple.opacity(0.8),
+                                        .blue.opacity(0.6)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 210)
+                .clipped()
+                
+                LinearGradient(
+                    colors: [
+                        .black.opacity(0.8),
+                        .clear
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+                
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(banner.title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    
+                    if !banner.subtitle.isEmpty {
+                        Text(banner.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.9))
+                            .lineLimit(2)
+                    }
+                    
+                    if !banner.buttonTitle.isEmpty {
+                        Text(banner.buttonTitle)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(.white.opacity(0.2))
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(18)
+            }
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 24,
+                    style: .continuous
+                )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - External Destination
+
+private struct BannerExternalDestination: View {
+    let urlString: String
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "link")
+                    .font(.system(size: 42))
+                    .foregroundStyle(.secondary)
+                
+                Text("فتح الرابط")
+                    .font(.headline)
+                
+                if let url = URL(string: urlString), !urlString.isEmpty {
+                    Link("فتح", destination: url)
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Text("لا يوجد رابط صالح لهذا البنر.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+            .navigationTitle("NOVA STORE")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+#Preview {
+    NOVAHomeView()
+        .environmentObject(RepositoryStore())
 }
