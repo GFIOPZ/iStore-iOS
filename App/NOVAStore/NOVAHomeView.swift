@@ -7,11 +7,23 @@ struct NOVAHomeView: View {
     @EnvironmentObject private var repositories: RepositoryStore
     
     @State private var selectedBanner: NOVABanner?
-    @State private var selectedApp: NOVAApp?
+    @State private var selectedApp: RepoApp?
     
-    private var latestApps: [NOVAApp] {
+    /// "آخر التحديثات" now shows real apps from the sources the user actually
+    /// added (RepositoryStore), instead of requiring manual curation in the
+    /// separate NOVA-STORE apps.json control panel.
+    private var latestApps: [RepoApp] {
         let limit = store.settings?.latestAppsLimit ?? 10
-        return Array(store.apps.prefix(max(0, limit)))
+        var seen = Set<String>()
+        var result: [RepoApp] = []
+        for repo in repositories.repositories {
+            guard let apps = repositories.catalog[repo.id]?.apps else { continue }
+            for app in apps where seen.insert(app.id).inserted {
+                result.append(app)
+                if result.count >= max(0, limit) { return result }
+            }
+        }
+        return result
     }
     
     var body: some View {
@@ -42,6 +54,7 @@ struct NOVAHomeView: View {
                     .refreshable {
                         await store.refresh(force: true)
                         syncSources()
+                        await refreshRepositoryCatalogs()
                     }
                 }
             }
@@ -49,12 +62,23 @@ struct NOVAHomeView: View {
             .task {
                 await store.refresh()
                 syncSources()
+                if latestApps.isEmpty { await refreshRepositoryCatalogs() }
             }
             .sheet(item: $selectedBanner) { banner in
                 bannerDestination(banner)
             }
             .sheet(item: $selectedApp) { app in
-                NOVAAppDetailView(app: app)
+                RepoAppDetailSheet(app: app)
+            }
+        }
+    }
+
+    /// Fetches every added source concurrently so the "آخر التحديثات" section
+    /// has real data without waiting on the control-panel apps.json.
+    private func refreshRepositoryCatalogs() async {
+        await withTaskGroup(of: Void.self) { group in
+            for repo in repositories.repositories {
+                group.addTask { await repositories.refresh(repo) }
             }
         }
     }
@@ -198,7 +222,7 @@ struct NOVAHomeView: View {
             Text("لا توجد تطبيقات حالياً")
                 .font(.headline)
             
-            Text("ستظهر التطبيقات هنا عند إضافتها من لوحة التحكم.")
+            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافة مصدر من قسم \"المصادر\".")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -208,52 +232,31 @@ struct NOVAHomeView: View {
     }
     
     @ViewBuilder
-    private func appRow(_ app: NOVAApp) -> some View {
+    private func appRow(_ app: RepoApp) -> some View {
         HStack(spacing: 13) {
-            AsyncImage(url: URL(string: app.icon)) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                    
-                default:
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 15)
-                            .fill(Color.secondary.opacity(0.12))
-                        
-                        Image(systemName: "app.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(width: 58, height: 58)
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 15,
-                    style: .continuous
-                )
-            )
-            
+            CachedAppIcon(url: app.iconURL, size: 58, cornerRadius: 15)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                
-                Text(app.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                
+
+                if let dev = app.developerName, !dev.isEmpty {
+                    Text(dev)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 HStack(spacing: 7) {
-                    if !app.version.isEmpty {
-                        Text("v\(app.version)")
+                    if let version = app.version, !version.isEmpty {
+                        Text("v\(version)")
                     }
-                    
-                    if !app.size.isEmpty {
+
+                    if let size = app.size {
                         Text("•")
-                        Text(app.size)
+                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                     }
                 }
                 .font(.caption2.weight(.medium))
