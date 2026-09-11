@@ -7,7 +7,8 @@ struct NOVAHomeView: View {
     @EnvironmentObject private var repositories: RepositoryStore
     
     @State private var selectedBanner: NOVABanner?
-    @State private var selectedApp: RepoApp? // عادت إلى RepoApp لتقرأ من المصادر
+    @State private var selectedApp: RepoApp?
+    @State private var didInitialRefresh = false // تمنع التحميل المتكرر عند التنقل
     
     // سحب "آخر التحديثات" من المصادر المضافة (مثل AppTesters)
     private var latestApps: [RepoApp] {
@@ -30,8 +31,8 @@ struct NOVAHomeView: View {
                 Color(.systemGroupedBackground)
                     .ignoresSafeArea()
                 
-                if store.isLoading && store.apps.isEmpty {
-                    ProgressView("جاري تحميل NOVA STORE...")
+                if store.isLoading && store.apps.isEmpty && !didInitialRefresh {
+                    ProgressView("جاري التحميل...")
                 } else {
                     ScrollView {
                         VStack(spacing: 20) {
@@ -45,22 +46,33 @@ struct NOVAHomeView: View {
                             
                             latestAppsSection
                             
-                            sourcesSection
+                            // تم حذف قسم المصادر من هنا نهائياً
                         }
                         .padding(.vertical, 16)
                     }
                     .refreshable {
                         await store.refresh(force: true)
-                        syncSources()
                         await refreshRepositoryCatalogs()
                     }
                 }
             }
             .navigationBarHidden(true)
             .task {
+                // منع التحميل المتكرر عند التنقل
+                guard !didInitialRefresh else { return }
+                
                 await store.refresh()
-                syncSources()
-                if latestApps.isEmpty { await refreshRepositoryCatalogs() }
+                
+                // انتظار تحميل الكاش الخاص بالسورسات لتظهر التطبيقات مباشرة
+                while !repositories.catalogCacheLoaded {
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                }
+                
+                if latestApps.isEmpty {
+                    await refreshRepositoryCatalogs()
+                }
+                
+                didInitialRefresh = true
             }
             .sheet(item: $selectedBanner) { banner in
                 bannerDestination(banner)
@@ -97,7 +109,7 @@ struct NOVAHomeView: View {
             Button {
                 Task {
                     await store.refresh(force: true)
-                    syncSources()
+                    await refreshRepositoryCatalogs()
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -157,10 +169,6 @@ struct NOVAHomeView: View {
     
     private var bannersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("مميز")
-                .font(.title3.weight(.bold))
-                .padding(.horizontal, 16)
-            
             TabView(selection: $selectedBanner) {
                 ForEach(store.banners) { banner in
                     BannerCard(banner: banner) {
@@ -170,7 +178,8 @@ struct NOVAHomeView: View {
                     .padding(.horizontal, 16)
                 }
             }
-            .frame(height: 210)
+            // زيادة الارتفاع ليتناسب مع التصميم الاحترافي الجديد للبنر
+            .frame(height: 320)
             .tabViewStyle(.page(indexDisplayMode: .automatic))
         }
     }
@@ -218,7 +227,7 @@ struct NOVAHomeView: View {
             Text("لا توجد تطبيقات حالياً")
                 .font(.headline)
             
-            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافة مصدر من قسم \"المصادر\".")
+            Text("قم بإضافة مصادر لتظهر التطبيقات هنا.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -275,57 +284,11 @@ struct NOVAHomeView: View {
         )
     }
     
-    // MARK: - Sources
-    
-    private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("المصادر")
-                .font(.title3.weight(.bold))
-                .padding(.horizontal, 16)
-            
-            if store.sources.isEmpty {
-                Text("لا توجد مصادر مفعلة")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(store.sources) { source in
-                            sourceCard(source)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
-        }
-    }
-    
-    private func sourceCard(_ source: NOVASource) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "shippingbox.fill")
-                .font(.title3)
-            
-            Text(source.name)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-        }
-        .frame(width: 150, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(
-                cornerRadius: 18,
-                style: .continuous
-            )
-            .fill(Color(.secondarySystemGroupedBackground))
-        )
-    }
-    
     // MARK: - Banner Destination
     
     @ViewBuilder
     private func bannerDestination(_ banner: NOVABanner) -> some View {
-        if let app = store.app(id: banner.appID) {
+        if let appID = banner.appID, let app = store.app(id: appID) {
             NOVAAppDetailView(app: app)
         } else if !banner.externalURL.isEmpty {
             BannerExternalDestination(
@@ -344,32 +307,6 @@ struct NOVAHomeView: View {
         }
     }
     
-    // MARK: - Sources Sync
-    
-    private func syncSources() {
-        for source in store.sources {
-            let repoURL = source.repoURL.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            
-            guard !repoURL.isEmpty else {
-                continue
-            }
-            
-            guard let url = URL(string: repoURL) else {
-                continue
-            }
-            
-            guard !repositories.repositories.contains(where: {
-                $0.url == url
-            }) else {
-                continue
-            }
-            
-            _ = repositories.add(urlString: repoURL)
-        }
-    }
-    
     // MARK: - Support
     
     private func openSupportChannel() {
@@ -383,7 +320,7 @@ struct NOVAHomeView: View {
     }
 }
 
-// MARK: - Banner Card
+// MARK: - Banner Card (التصميم الجديد المطابق للصورة)
 
 private struct BannerCard: View {
     let banner: NOVABanner
@@ -391,73 +328,67 @@ private struct BannerCard: View {
     
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                // التصحيح: استخدام banner.imageURL بدلاً من banner.image
+            VStack(spacing: 0) {
+                // القسم العلوي: صورة البنر
                 AsyncImage(url: URL(string: banner.imageURL)) { phase in
                     switch phase {
                     case .success(let image):
                         image
                             .resizable()
                             .scaledToFill()
-                        
                     default:
                         Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .purple.opacity(0.8),
-                                        .blue.opacity(0.6)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(Color.gray.opacity(0.3))
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 210)
+                .frame(height: 200)
                 .clipped()
                 
-                LinearGradient(
-                    colors: [
-                        .black.opacity(0.8),
-                        .clear
-                    ],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-                
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(banner.title)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
+                // القسم السفلي: الخلفية الكحلية الأنيقة مع النصوص والزر
+                HStack(alignment: .center, spacing: 12) {
                     
-                    if !banner.subtitle.isEmpty {
-                        Text(banner.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .lineLimit(2)
-                    }
-                    
+                    // الزر على اليسار
                     if !banner.buttonTitle.isEmpty {
                         Text(banner.buttonTitle)
-                            .font(.caption.weight(.bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(.white.opacity(0.2))
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.15))
                             .clipShape(Capsule())
+                    }
+                    
+                    Spacer()
+                    
+                    // النصوص على اليمين
+                    VStack(alignment: .trailing, spacing: 3) {
+                        if !banner.subtitle.isEmpty {
+                            Text(banner.subtitle)
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        
+                        Text(banner.title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(2)
+                        
+                        if !banner.description.isEmpty {
+                            Text(banner.description)
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .padding(18)
+                .frame(maxWidth: .infinity)
+                // اللون الكحلي المطابق للصورة
+                .background(Color(red: 0.17, green: 0.24, blue: 0.35))
             }
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: 24,
-                    style: .continuous
-                )
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
     }
