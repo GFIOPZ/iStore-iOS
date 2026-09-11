@@ -6,10 +6,11 @@ struct NOVAHomeView: View {
     @StateObject private var store = NOVAStoreService.shared
     @EnvironmentObject private var repositories: RepositoryStore
 
-    @State private var bannerPage: NOVABanner?      // يتحكم فقط بالتمرير بين البنرات
-    @State private var selectedBanner: NOVABanner?  // يفتح الشيت عند الضغط الفعلي
+    @State private var bannerOrder: [NOVABanner] = []  // ترتيب الكومة الحالي (البنر الأول = الأمامي)
+    @State private var dragOffset: CGSize = .zero
+    @State private var selectedBanner: NOVABanner?     // يفتح الشيت عند الضغط الفعلي
     @State private var selectedApp: RepoApp?
-    @State private var didInitialRefresh = false     // تمنع التحميل المتكرر عند التنقل
+    @State private var didInitialRefresh = false        // تمنع التحميل المتكرر عند التنقل
 
     // MARK: - Palette
 
@@ -21,7 +22,8 @@ struct NOVAHomeView: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    // سحب "آخر التحديثات" من المصادر المضافة (مثل AppTesters)
+    // سحب "آخر التحديثات" من المصادر المضافة (مثل AppTesters) + التطبيقات
+    // المضافة يدويًا من لوحة التحكم — كلهم بقائمة وحدة موحدة.
     private var latestApps: [RepoApp] {
         let limit = store.settings?.latestAppsLimit ?? 10
         var seen = Set<String>()
@@ -32,6 +34,11 @@ struct NOVAHomeView: View {
                 result.append(app)
                 if result.count >= max(0, limit) { return result }
             }
+        }
+        for novaApp in store.apps where novaApp.enabled {
+            guard result.count < max(0, limit) else { break }
+            let app = RepoApp(novaApp: novaApp)
+            if seen.insert(app.id).inserted { result.append(app) }
         }
         return result
     }
@@ -84,7 +91,9 @@ struct NOVAHomeView: View {
                 didInitialRefresh = true
             }
             .onChange(of: store.banners) { banners in
-                if bannerPage == nil { bannerPage = banners.first }
+                if bannerOrder.map(\.id) != banners.map(\.id) {
+                    bannerOrder = banners
+                }
             }
             .sheet(item: $selectedBanner) { banner in
                 bannerDestination(banner)
@@ -140,39 +149,80 @@ struct NOVAHomeView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Banners
+    // MARK: - Banners (كومة متراكبة: بنر جوّه بنر، سحب يدوي)
+
+    /// طبقتين بس يبانون خلف البنر الأمامي (تلميح بصري بدون تفاعل).
+    private var backLayers: [NOVABanner] {
+        Array(bannerOrder.dropFirst().prefix(2))
+    }
 
     private var bannersSection: some View {
-        VStack(spacing: 10) {
-            TabView(selection: $bannerPage) {
-                ForEach(store.banners) { banner in
-                    BannerCard(banner: banner) {
-                        Haptics.tap()
-                        selectedBanner = banner
-                    }
-                    .tag(Optional(banner))
-                    .padding(.horizontal, 16)
+        VStack(spacing: 14) {
+            ZStack {
+                ForEach(Array(backLayers.enumerated()), id: \.element.id) { offset, banner in
+                    let depth = offset + 1
+                    BannerCard(banner: banner)
+                        .frame(height: 300)
+                        .padding(.horizontal, 16)
+                        .scaleEffect(1 - CGFloat(depth) * 0.045)
+                        .offset(y: -CGFloat(depth) * 14)
+                        .opacity(1 - Double(depth) * 0.25)
+                        .allowsHitTesting(false)
+                }
+
+                if let front = bannerOrder.first {
+                    BannerCard(banner: front)
+                        .frame(height: 300)
+                        .padding(.horizontal, 16)
+                        .offset(dragOffset)
+                        .rotationEffect(.degrees(Double(dragOffset.width / 20)))
+                        .gesture(
+                            DragGesture(minimumDistance: 12)
+                                .onChanged { value in dragOffset = value.translation }
+                                .onEnded(handleSwipeEnd)
+                        )
+                        .onTapGesture {
+                            guard dragOffset == .zero else { return }
+                            Haptics.tap()
+                            selectedBanner = front
+                        }
+                        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: dragOffset)
                 }
             }
-            .frame(height: 300)
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .onAppear { if bannerPage == nil { bannerPage = store.banners.first } }
+            .animation(.spring(response: 0.5, dampingFraction: 0.82), value: bannerOrder)
 
             if store.banners.count > 1 {
                 HStack(spacing: 6) {
                     ForEach(store.banners) { banner in
                         Capsule()
                             .fill(
-                                banner.id == bannerPage?.id
+                                banner.id == bannerOrder.first?.id
                                     ? AnyShapeStyle(brandGradient)
                                     : AnyShapeStyle(Color.secondary.opacity(0.25))
                             )
-                            .frame(width: banner.id == bannerPage?.id ? 20 : 6, height: 6)
+                            .frame(width: banner.id == bannerOrder.first?.id ? 20 : 6, height: 6)
                     }
                 }
-                .animation(.spring(response: 0.3, dampingFraction: 0.75), value: bannerPage)
+                .animation(.spring(response: 0.3, dampingFraction: 0.75), value: bannerOrder)
             }
         }
+        .onAppear {
+            if bannerOrder.isEmpty { bannerOrder = store.banners }
+        }
+    }
+
+    /// يسحب المستخدم البنر الأمامي يمين/يسار — إذا تجاوز الحد الأدنى، ينتقل
+    /// للخلف بالكومة ويطلع البنر التالي للأمام (بدون أي تقليب تلقائي).
+    private func handleSwipeEnd(_ value: DragGesture.Value) {
+        let threshold: CGFloat = 90
+        if abs(value.translation.width) > threshold, bannerOrder.count > 1 {
+            Haptics.impact()
+            var order = bannerOrder
+            let moved = order.removeFirst()
+            order.append(moved)
+            bannerOrder = order
+        }
+        dragOffset = .zero
     }
 
     // MARK: - Latest Apps
@@ -325,7 +375,9 @@ struct NOVAHomeView: View {
     @ViewBuilder
     private func bannerDestination(_ banner: NOVABanner) -> some View {
         if let appID = banner.appID, let app = store.app(id: appID) {
-            NOVAAppDetailView(app: app)
+            // نفس الصفحة الفخمة ونفس زر التحميل (توقيع تلقائي) لأي تطبيق،
+            // حتى لو مضاف يدويًا من لوحة التحكم.
+            RepoAppDetailSheet(app: RepoApp(novaApp: app))
         } else if !banner.externalURL.isEmpty {
             BannerExternalDestination(urlString: banner.externalURL)
         } else {
@@ -362,7 +414,6 @@ private enum Haptics {
 
 private struct BannerCard: View {
     let banner: NOVABanner
-    let action: () -> Void
 
     private let gradientStart = Color(hex: "7C3AED")
     private let gradientEnd = Color(hex: "A855F7")
@@ -373,79 +424,77 @@ private struct BannerCard: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            GeometryReader { proxy in
-                ZStack(alignment: .bottom) {
-                    // الصورة تملأ الكرت بالكامل
-                    AsyncImage(url: URL(string: banner.imageURL)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        default:
-                            LinearGradient(
-                                colors: [gradientStart.opacity(0.5), gradientEnd.opacity(0.35)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                        }
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                // الصورة تملأ الكرت بالكامل
+                AsyncImage(url: URL(string: banner.imageURL)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        LinearGradient(
+                            colors: [gradientStart.opacity(0.5), gradientEnd.opacity(0.35)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
                     }
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-
-                    // تظليل تدريجي أسفل الصورة لضمان وضوح النص
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.1), .black.opacity(0.72)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-
-                    // النص والزر فوق الصورة مباشرة
-                    HStack(alignment: .bottom, spacing: 12) {
-                        if !banner.buttonTitle.isEmpty {
-                            Text(banner.buttonTitle)
-                                .font(.system(size: 13.5, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 9)
-                                .background(brandGradient)
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-                        }
-
-                        Spacer(minLength: 6)
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            if !banner.subtitle.isEmpty {
-                                Text(banner.subtitle)
-                                    .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.8))
-                            }
-                            Text(banner.title)
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.trailing)
-                                .lineLimit(2)
-                            if !banner.description.isEmpty {
-                                Text(banner.description)
-                                    .font(.system(size: 11, weight: .regular))
-                                    .foregroundStyle(.white.opacity(0.75))
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    .padding(16)
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
+
+                // تظليل تدريجي أسفل الصورة لضمان وضوح النص
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.1), .black.opacity(0.72)],
+                    startPoint: .top, endPoint: .bottom
+                )
+
+                // النص والزر فوق الصورة مباشرة
+                HStack(alignment: .bottom, spacing: 12) {
+                    if !banner.buttonTitle.isEmpty {
+                        Text(banner.buttonTitle)
+                            .font(.system(size: 13.5, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 9)
+                            .background(brandGradient)
+                            .clipShape(Capsule())
+                            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                    }
+
+                    Spacer(minLength: 6)
+
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if !banner.subtitle.isEmpty {
+                            Text(banner.subtitle)
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        Text(banner.title)
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(2)
+                        if !banner.description.isEmpty {
+                            Text(banner.description)
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(16)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(
-                        LinearGradient(colors: [.white.opacity(0.28), .clear],
-                                       startPoint: .top, endPoint: .center),
-                        lineWidth: 1
-                    )
-            }
-            .shadow(color: gradientStart.opacity(0.25), radius: 14, y: 8)
         }
-        .buttonStyle(PressableStyle())
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(
+                    LinearGradient(colors: [.white.opacity(0.28), .clear],
+                                   startPoint: .top, endPoint: .center),
+                    lineWidth: 1
+                )
+        }
+        .shadow(color: gradientStart.opacity(0.25), radius: 14, y: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 }
 
