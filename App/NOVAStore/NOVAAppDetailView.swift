@@ -238,29 +238,3 @@ struct NOVAAppDetailView: View {
         }
     }
 }
-
-#Preview {
-    NavigationStack {
-        NOVAAppDetailView(
-            app: NOVAApp(
-                id: "example",
-                name: "Example App",
-                subtitle: "تطبيق تجريبي",
-                description: "وصف تجريبي للتطبيق.",
-                icon: "",
-                version: "1.0.0",
-                size: "10 MB",
-                categoryID: "other",
-                sourceID: "nova-store",
-                sourceType: "official",
-                ipaURL: "",
-                screenshots: [],
-                featured: true,
-                enabled: true,
-                createdAt: "",
-                updatedAt: ""
-            )
-        )
-        .environmentObject(RepositoryStore())
-    }
-}
