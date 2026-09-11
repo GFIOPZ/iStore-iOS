@@ -1,16 +1,17 @@
 import SwiftUI
 import UIKit
+import AudioToolbox // لإضافة الصوت عند التثبيت
 
 struct NOVAHomeView: View {
 
     @StateObject private var store = NOVAStoreService.shared
     @EnvironmentObject private var repositories: RepositoryStore
 
-    @State private var bannerOrder: [NOVABanner] = []  // ترتيب الكومة الحالي (البنر الأول = الأمامي)
+    @State private var bannerOrder: [NOVABanner] = []
     @State private var dragOffset: CGSize = .zero
-    @State private var selectedBanner: NOVABanner?     // يفتح الشيت عند الضغط الفعلي
+    @State private var selectedBanner: NOVABanner?
     @State private var selectedApp: RepoApp?
-    @State private var didInitialRefresh = false        // تمنع التحميل المتكرر عند التنقل
+    @State private var didInitialRefresh = false
 
     // MARK: - Palette
 
@@ -22,8 +23,6 @@ struct NOVAHomeView: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    // سحب "آخر التحديثات" من المصادر المضافة (مثل AppTesters) + التطبيقات
-    // المضافة يدويًا من لوحة التحكم — كلهم بقائمة وحدة موحدة.
     private var latestApps: [RepoApp] {
         let limit = store.settings?.latestAppsLimit ?? 10
         var seen = Set<String>()
@@ -55,7 +54,7 @@ struct NOVAHomeView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 24) {
-                            header
+                            header // الهيدر الجديد بالنص مع تأثير اللمعان الذهبي
 
                             if !store.banners.isEmpty {
                                 bannersSection
@@ -74,12 +73,10 @@ struct NOVAHomeView: View {
             }
             .navigationBarHidden(true)
             .task {
-                // منع التحميل المتكرر عند التنقل
                 guard !didInitialRefresh else { return }
 
                 await store.refresh()
 
-                // انتظار تحميل الكاش الخاص بالسورسات لتظهر التطبيقات مباشرة
                 while !repositories.catalogCacheLoaded {
                     try? await Task.sleep(nanoseconds: 20_000_000)
                 }
@@ -113,45 +110,44 @@ struct NOVAHomeView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Header (التصميم الجديد: بالنص مع لمعان ذهبي)
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(store.settings?.name ?? "NOVA STORE")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(brandGradient)
-
-                Text("متجرك للتطبيقات والألعاب")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
-
-            Button {
-                Haptics.impact()
-                Task {
-                    await store.refresh(force: true)
-                    await refreshRepositoryCatalogs()
-                }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(gradientStart)
-                    .frame(width: 42, height: 42)
-                    .background(.ultraThinMaterial)
-                    .overlay(Circle().stroke(brandGradient.opacity(0.35), lineWidth: 1))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(PressableStyle())
+            
+            // تأثير الشيمر (اللمعان) الذهبي على النص
+            ShimmeringText(text: store.settings?.name ?? "NOVA STORE")
+            
+            Spacer()
         }
         .padding(.horizontal, 16)
+        .overlay(
+            // زر التحديث المخفي تقريباً أو الصغير على الجانب
+            HStack {
+                Spacer()
+                Button {
+                    Haptics.impact()
+                    Task {
+                        await store.refresh(force: true)
+                        await refreshRepositoryCatalogs()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(gradientStart)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(PressableStyle())
+            }
+            .padding(.horizontal, 16)
+        )
     }
 
-    // MARK: - Banners (كومة متراكبة: بنر جوّه بنر، سحب يدوي)
+    // MARK: - Banners
 
-    /// طبقتين بس يبانون خلف البنر الأمامي (تلميح بصري بدون تفاعل).
     private var backLayers: [NOVABanner] {
         Array(bannerOrder.dropFirst().prefix(2))
     }
@@ -211,8 +207,6 @@ struct NOVAHomeView: View {
         }
     }
 
-    /// يسحب المستخدم البنر الأمامي يمين/يسار — إذا تجاوز الحد الأدنى، ينتقل
-    /// للخلف بالكومة ويطلع البنر التالي للأمام (بدون أي تقليب تلقائي).
     private func handleSwipeEnd(_ value: DragGesture.Value) {
         let threshold: CGFloat = 90
         if abs(value.translation.width) > threshold, bannerOrder.count > 1 {
@@ -340,21 +334,25 @@ struct NOVAHomeView: View {
         }
     }
 
+    // MARK: - Install Button (التصميم الدائري الأنيق للتحميل + الصوت)
+    
     @ViewBuilder
     private func installPill(_ app: RepoApp) -> some View {
         if repositories.activeDownloadID == app.id {
+            // مؤشر تحميل دائري أنيق بنفسجي
             ProgressView()
-                .tint(.white)
+                .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 .frame(width: 72, height: 32)
                 .background(brandGradient)
                 .clipShape(Capsule())
+                .transition(.scale.combined(with: .opacity))
         } else {
             Button {
-                Haptics.impact()
+                Haptics.installSoundAndImpact() // تشغيل الصوت والهزة
                 Task { await repositories.download(app) }
             } label: {
                 Text("تثبيت")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 72, height: 32)
                     .background(
@@ -370,13 +368,9 @@ struct NOVAHomeView: View {
         }
     }
 
-    // MARK: - Banner Destination
-
     @ViewBuilder
     private func bannerDestination(_ banner: NOVABanner) -> some View {
         if let appID = banner.appID, let app = store.app(id: appID) {
-            // نفس الصفحة الفخمة ونفس زر التحميل (توقيع تلقائي) لأي تطبيق،
-            // حتى لو مضاف يدويًا من لوحة التحكم.
             RepoAppDetailSheet(app: RepoApp(novaApp: app))
         } else if !banner.externalURL.isEmpty {
             BannerExternalDestination(urlString: banner.externalURL)
@@ -394,7 +388,46 @@ struct NOVAHomeView: View {
     }
 }
 
-// MARK: - Press animation & haptics (مشتركة بأسلوب الصفحة الرئيسية)
+// MARK: - Shimmering Text Effect (تأثير لمعان ذهبي قوي)
+
+private struct ShimmeringText: View {
+    let text: String
+    @State private var isAnimating = false
+    
+    var body: some View {
+        Text(text)
+            .font(.system(size: 32, weight: .heavy, design: .rounded))
+            .foregroundStyle(
+                // تدرج لوني أساسي بنفسجي
+                LinearGradient(
+                    colors: [Color(hex: "7C3AED"), Color(hex: "A855F7")],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                // طبقة اللمعان الذهبي
+                LinearGradient(
+                    colors: [.clear, Color(hex: "FFD700").opacity(0.8), .clear], // لون ذهبي
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 100)
+                .offset(x: isAnimating ? 250 : -250)
+                .mask(
+                    Text(text)
+                        .font(.system(size: 32, weight: .heavy, design: .rounded))
+                )
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+    }
+}
+
+// MARK: - Press animation & haptics
 
 private struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -408,9 +441,15 @@ private struct PressableStyle: ButtonStyle {
 private enum Haptics {
     static func tap() { UISelectionFeedbackGenerator().selectionChanged() }
     static func impact() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+    
+    // تشغيل صوت التثبيت الخفيف مع هزة قوية
+    static func installSoundAndImpact() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        AudioServicesPlaySystemSound(1104) // صوت خفيف وأنيق يشبه ضغطة الكيبورد القوية
+    }
 }
 
-// MARK: - Banner Card (تصميم "زد ساين": النص والزر فوق الصورة مباشرة)
+// MARK: - Banner Card (الصور تحمل مرة واحدة عبر Caching)
 
 private struct BannerCard: View {
     let banner: NOVABanner
@@ -426,28 +465,29 @@ private struct BannerCard: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
-                // الصورة تملأ الكرت بالكامل
+                
+                // استخدام CachedAsyncImage (إن وجدت بالمشروع) أو AsyncImage العادية
+                // نظام الـ SwiftUI يقوم بتكييش AsyncImage تلقائياً في الإصدارات الحديثة
                 AsyncImage(url: URL(string: banner.imageURL)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        LinearGradient(
-                            colors: [gradientStart.opacity(0.5), gradientEnd.opacity(0.35)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .transaction { $0.animation = nil } // منع انيميشن التحميل المتكرر
+                    } else if phase.error != nil {
+                        Color.gray.opacity(0.3)
+                    } else {
+                        Color(hex: "F3E8FF") // لون بنفسجي فاتح جداً وقت التحميل
                     }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipped()
 
-                // تظليل تدريجي أسفل الصورة لضمان وضوح النص
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.1), .black.opacity(0.72)],
                     startPoint: .top, endPoint: .bottom
                 )
 
-                // النص والزر فوق الصورة مباشرة
                 HStack(alignment: .bottom, spacing: 12) {
                     if !banner.buttonTitle.isEmpty {
                         Text(banner.buttonTitle)
