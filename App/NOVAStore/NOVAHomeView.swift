@@ -1,6 +1,6 @@
 import SwiftUI
 import UIKit
-import AudioToolbox // لإضافة الصوت عند التثبيت
+import AudioToolbox // مكتبة الأصوات
 
 struct NOVAHomeView: View {
 
@@ -15,7 +15,7 @@ struct NOVAHomeView: View {
 
     // MARK: - Palette
 
-    private let gradientStart = Color(hex: "7C3AED")
+    private let gradientStart = Color(hex: "7C3AED") // أو استخدم Color(red: 0.48, green: 0.22, blue: 0.92)
     private let gradientEnd = Color(hex: "A855F7")
 
     private var brandGradient: LinearGradient {
@@ -49,12 +49,16 @@ struct NOVAHomeView: View {
                     .ignoresSafeArea()
 
                 if store.isLoading && store.apps.isEmpty && !didInitialRefresh {
-                    ProgressView("جاري التحميل...")
-                        .tint(gradientStart)
+                    VStack(spacing: 16) {
+                        ModernLoadingView(color: gradientStart)
+                        Text("جاري التحميل...")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     ScrollView {
                         VStack(spacing: 24) {
-                            header // الهيدر الجديد بالنص مع تأثير اللمعان الذهبي
+                            header // الهيدر بتأثير الأنترو الجديد
 
                             if !store.banners.isEmpty {
                                 bannersSection
@@ -110,20 +114,19 @@ struct NOVAHomeView: View {
         }
     }
 
-    // MARK: - Header (التصميم الجديد: بالنص مع لمعان ذهبي)
+    // MARK: - Header
 
     private var header: some View {
         HStack {
             Spacer()
             
-            // تأثير الشيمر (اللمعان) الذهبي على النص
-            ShimmeringText(text: store.settings?.name ?? "NOVA STORE")
+            // استدعاء تأثير الانترو القوي
+            IntroTitleView(text: store.settings?.name ?? "NOVA STORE")
             
             Spacer()
         }
         .padding(.horizontal, 16)
         .overlay(
-            // زر التحديث المخفي تقريباً أو الصغير على الجانب
             HStack {
                 Spacer()
                 Button {
@@ -333,22 +336,21 @@ struct NOVAHomeView: View {
                 .stroke(brandGradient.opacity(0.12), lineWidth: 1)
         }
     }
-
-    // MARK: - Install Button (التصميم الدائري الأنيق للتحميل + الصوت)
+    
+    // MARK: - Install Button
     
     @ViewBuilder
     private func installPill(_ app: RepoApp) -> some View {
         if repositories.activeDownloadID == app.id {
-            // مؤشر تحميل دائري أنيق بنفسجي
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+            // انيميشن التحميل الحديث والمختلف كلياً (النبض)
+            ModernLoadingView(color: .white)
                 .frame(width: 72, height: 32)
                 .background(brandGradient)
                 .clipShape(Capsule())
                 .transition(.scale.combined(with: .opacity))
         } else {
             Button {
-                Haptics.installSoundAndImpact() // تشغيل الصوت والهزة
+                Haptics.installSoundAndImpact()
                 Task { await repositories.download(app) }
             } label: {
                 Text("تثبيت")
@@ -379,7 +381,6 @@ struct NOVAHomeView: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
-
                 Text("لا يوجد محتوى مرتبط بهذا البنر")
                     .font(.headline)
             }
@@ -388,68 +389,134 @@ struct NOVAHomeView: View {
     }
 }
 
-// MARK: - Shimmering Text Effect (تأثير لمعان ذهبي قوي)
+// MARK: - Intro Title Effect (تأثير الانترو: كتابة ומسح مع خط قوي)
 
-private struct ShimmeringText: View {
+private struct IntroTitleView: View {
     let text: String
+    @State private var revealProgress: CGFloat = 0.0
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // الخلفية الشفافة للنص ليعطي شعور الانترو
+            Text(text)
+                .font(.system(size: 32, weight: .black, design: .rounded)) // خط قوي جداً وحاسم
+                .foregroundStyle(Color.gray.opacity(0.15))
+
+            // النص الذي يظهر ويختفي
+            Text(text)
+                .font(.system(size: 32, weight: .black, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(colors: [Color(hex: "7C3AED"), Color(hex: "A855F7")],
+                                   startPoint: .leading, endPoint: .trailing)
+                )
+                .mask(
+                    GeometryReader { geo in
+                        Rectangle()
+                            .frame(width: geo.size.width * revealProgress)
+                    }
+                )
+                .overlay(
+                    GeometryReader { geo in
+                        // مؤشر الكتابة الذهبي (الكرسور)
+                        Rectangle()
+                            .fill(Color(hex: "FFD700"))
+                            .frame(width: 3)
+                            .offset(x: (geo.size.width * revealProgress) - 1.5)
+                            .opacity(revealProgress > 0.01 && revealProgress < 0.99 ? 1 : 0)
+                            .shadow(color: Color(hex: "FFD700").opacity(0.6), radius: 4, x: 0, y: 0)
+                    }
+                )
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .onAppear {
+            // حركة الكتابة والمسح مستمرة
+            withAnimation(.easeInOut(duration: 2.0).delay(0.5).repeatForever(autoreverses: true)) {
+                revealProgress = 1.0
+            }
+        }
+    }
+}
+
+// MARK: - Modern Loading View (تأثير تحميل جديد كلياً - أمواج صوتية/نبض)
+
+private struct ModernLoadingView: View {
+    let color: Color
     @State private var isAnimating = false
     
     var body: some View {
-        Text(text)
-            .font(.system(size: 32, weight: .heavy, design: .rounded))
-            .foregroundStyle(
-                // تدرج لوني أساسي بنفسجي
-                LinearGradient(
-                    colors: [Color(hex: "7C3AED"), Color(hex: "A855F7")],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                // طبقة اللمعان الذهبي
-                LinearGradient(
-                    colors: [.clear, Color(hex: "FFD700").opacity(0.8), .clear], // لون ذهبي
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 100)
-                .offset(x: isAnimating ? 250 : -250)
-                .mask(
-                    Text(text)
-                        .font(.system(size: 32, weight: .heavy, design: .rounded))
-                )
-            )
-            .onAppear {
-                withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                    isAnimating = true
+        HStack(spacing: 4) {
+            ForEach(0..<3) { index in
+                Capsule()
+                    .fill(color)
+                    // اختلاف بالارتفاع يعطي شكل موجة
+                    .frame(width: 4, height: isAnimating ? 14 : 4)
+                    .animation(
+                        .easeInOut(duration: 0.5)
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(index) * 0.15),
+                        value: isAnimating
+                    )
+            }
+        }
+        .frame(height: 14)
+        .onAppear { isAnimating = true }
+    }
+}
+
+// MARK: - Banner Image Caching System (نظام التكييش الخاص لحل الكراش)
+
+class BannerImageLoader: ObservableObject {
+    @Published var image: UIImage?
+    private static let cache = NSCache<NSString, UIImage>()
+    private var currentURL: String?
+
+    func load(from urlString: String) {
+        self.currentURL = urlString
+        
+        // إذا الصورة موجودة بالذاكرة، اعرضها فوراً ولا تسوي أي طلب جديد (يمنع الكراش)
+        if let cached = Self.cache.object(forKey: urlString as NSString) {
+            self.image = cached
+            return
+        }
+        
+        guard let url = URL(string: urlString) else { return }
+        
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self, self.currentURL == urlString,
+                  let data = data, let uiImage = UIImage(data: data) else { return }
+            
+            Self.cache.setObject(uiImage, forKey: urlString as NSString)
+            DispatchQueue.main.async {
+                self.image = uiImage
+            }
+        }.resume()
+    }
+}
+
+private struct CachedBannerImage: View {
+    let urlString: String
+    @StateObject private var loader = BannerImageLoader()
+
+    var body: some View {
+        Group {
+            if let image = loader.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Color(hex: "F3E8FF") // لون خلفية هادئ أثناء التحميل
+                    ModernLoadingView(color: Color(hex: "7C3AED"))
                 }
             }
+        }
+        .onAppear {
+            loader.load(from: urlString)
+        }
     }
 }
 
-// MARK: - Press animation & haptics
-
-private struct PressableStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
-    }
-}
-
-private enum Haptics {
-    static func tap() { UISelectionFeedbackGenerator().selectionChanged() }
-    static func impact() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    
-    // تشغيل صوت التثبيت الخفيف مع هزة قوية
-    static func installSoundAndImpact() {
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        AudioServicesPlaySystemSound(1104) // صوت خفيف وأنيق يشبه ضغطة الكيبورد القوية
-    }
-}
-
-// MARK: - Banner Card (الصور تحمل مرة واحدة عبر Caching)
+// MARK: - Banner Card (استخدام نظام التكييش الجديد)
 
 private struct BannerCard: View {
     let banner: NOVABanner
@@ -466,22 +533,10 @@ private struct BannerCard: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 
-                // استخدام CachedAsyncImage (إن وجدت بالمشروع) أو AsyncImage العادية
-                // نظام الـ SwiftUI يقوم بتكييش AsyncImage تلقائياً في الإصدارات الحديثة
-                AsyncImage(url: URL(string: banner.imageURL)) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .transaction { $0.animation = nil } // منع انيميشن التحميل المتكرر
-                    } else if phase.error != nil {
-                        Color.gray.opacity(0.3)
-                    } else {
-                        Color(hex: "F3E8FF") // لون بنفسجي فاتح جداً وقت التحميل
-                    }
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .clipped()
+                // استخدام الصورة المكيشة (بدون كراش وبدون تحميل متكرر)
+                CachedBannerImage(urlString: banner.imageURL)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
 
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.1), .black.opacity(0.72)],
@@ -538,6 +593,27 @@ private struct BannerCard: View {
     }
 }
 
+// MARK: - Press animation & haptics
+
+private struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
+private enum Haptics {
+    static func tap() { UISelectionFeedbackGenerator().selectionChanged() }
+    static func impact() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+    
+    static func installSoundAndImpact() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred() // هزة قوية ومحسوسة
+        AudioServicesPlaySystemSound(1520) // صوت 'Pop' احترافي جداً وواضح للاستجابة
+    }
+}
+
 // MARK: - External Destination
 
 private struct BannerExternalDestination: View {
@@ -549,10 +625,8 @@ private struct BannerExternalDestination: View {
                 Image(systemName: "link")
                     .font(.system(size: 42))
                     .foregroundStyle(.secondary)
-
                 Text("فتح الرابط")
                     .font(.headline)
-
                 if let url = URL(string: urlString), !urlString.isEmpty {
                     Link("فتح", destination: url)
                         .buttonStyle(.borderedProminent)
