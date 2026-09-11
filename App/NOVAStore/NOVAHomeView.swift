@@ -1,6 +1,6 @@
 import SwiftUI
 import UIKit
-import AudioToolbox // مكتبة الأصوات
+import AudioToolbox
 
 struct NOVAHomeView: View {
 
@@ -15,7 +15,7 @@ struct NOVAHomeView: View {
 
     // MARK: - Palette
 
-    private let gradientStart = Color(hex: "7C3AED") // أو استخدم Color(red: 0.48, green: 0.22, blue: 0.92)
+    private let gradientStart = Color(hex: "7C3AED")
     private let gradientEnd = Color(hex: "A855F7")
 
     private var brandGradient: LinearGradient {
@@ -58,7 +58,7 @@ struct NOVAHomeView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 24) {
-                            header // الهيدر بتأثير الأنترو الجديد
+                            header // الهيدر بتأثير الأنترو (كتابة ومسح)
 
                             if !store.banners.isEmpty {
                                 bannersSection
@@ -342,7 +342,7 @@ struct NOVAHomeView: View {
     @ViewBuilder
     private func installPill(_ app: RepoApp) -> some View {
         if repositories.activeDownloadID == app.id {
-            // انيميشن التحميل الحديث والمختلف كلياً (النبض)
+            // انيميشن التحميل الحديث (الموجة/النبض)
             ModernLoadingView(color: .white)
                 .frame(width: 72, height: 32)
                 .background(brandGradient)
@@ -389,7 +389,7 @@ struct NOVAHomeView: View {
     }
 }
 
-// MARK: - Intro Title Effect (تأثير الانترو: كتابة ומسح مع خط قوي)
+// MARK: - Intro Title Effect (تأثير الانترو: كتابة ومسح مع خط قوي)
 
 private struct IntroTitleView: View {
     let text: String
@@ -399,7 +399,7 @@ private struct IntroTitleView: View {
         ZStack(alignment: .leading) {
             // الخلفية الشفافة للنص ليعطي شعور الانترو
             Text(text)
-                .font(.system(size: 32, weight: .black, design: .rounded)) // خط قوي جداً وحاسم
+                .font(.system(size: 32, weight: .black, design: .rounded))
                 .foregroundStyle(Color.gray.opacity(0.15))
 
             // النص الذي يظهر ويختفي
@@ -463,8 +463,9 @@ private struct ModernLoadingView: View {
     }
 }
 
-// MARK: - Banner Image Caching System (نظام التكييش الخاص لحل الكراش)
+// MARK: - Banner Image Caching System (تم حل خطأ التزامن وإضافة @MainActor)
 
+@MainActor
 class BannerImageLoader: ObservableObject {
     @Published var image: UIImage?
     private static let cache = NSCache<NSString, UIImage>()
@@ -481,15 +482,16 @@ class BannerImageLoader: ObservableObject {
         
         guard let url = URL(string: urlString) else { return }
         
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let self = self, self.currentURL == urlString,
-                  let data = data, let uiImage = UIImage(data: data) else { return }
-            
-            Self.cache.setObject(uiImage, forKey: urlString as NSString)
-            DispatchQueue.main.async {
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard self.currentURL == urlString, let uiImage = UIImage(data: data) else { return }
+                Self.cache.setObject(uiImage, forKey: urlString as NSString)
                 self.image = uiImage
+            } catch {
+                // خطأ صامت في حال فشل التحميل لعدم إحداث كراش
             }
-        }.resume()
+        }
     }
 }
 
@@ -593,7 +595,7 @@ private struct BannerCard: View {
     }
 }
 
-// MARK: - Press animation & haptics
+// MARK: - Press animation & haptics (تم حل مشكلة التزامن بإضافة @MainActor)
 
 private struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -604,6 +606,7 @@ private struct PressableStyle: ButtonStyle {
     }
 }
 
+@MainActor // إضافة حماية التزامن لحل خطأ الـ UIImpactFeedbackGenerator
 private enum Haptics {
     static func tap() { UISelectionFeedbackGenerator().selectionChanged() }
     static func impact() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
