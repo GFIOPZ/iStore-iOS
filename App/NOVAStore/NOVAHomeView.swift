@@ -7,13 +7,21 @@ struct NOVAHomeView: View {
     @EnvironmentObject private var repositories: RepositoryStore
     
     @State private var selectedBanner: NOVABanner?
-    @State private var selectedApp: NOVAApp?
+    @State private var selectedApp: RepoApp? // عادت إلى RepoApp لتقرأ من المصادر
     
-    // تم تعديل هذا القسم ليجلب التطبيقات الخاصة بك مباشرة من لوحة التحكم (NOVAApp)
-    private var latestApps: [NOVAApp] {
+    // سحب "آخر التحديثات" من المصادر المضافة (مثل AppTesters)
+    private var latestApps: [RepoApp] {
         let limit = store.settings?.latestAppsLimit ?? 10
-        let sorted = store.apps.sorted { $0.updatedAt > $1.updatedAt }
-        return Array(sorted.prefix(limit))
+        var seen = Set<String>()
+        var result: [RepoApp] = []
+        for repo in repositories.repositories {
+            guard let apps = repositories.catalog[repo.id]?.apps else { continue }
+            for app in apps where seen.insert(app.id).inserted {
+                result.append(app)
+                if result.count >= max(0, limit) { return result }
+            }
+        }
+        return result
     }
     
     var body: some View {
@@ -52,13 +60,13 @@ struct NOVAHomeView: View {
             .task {
                 await store.refresh()
                 syncSources()
-                if repositories.repositories.isEmpty { await refreshRepositoryCatalogs() }
+                if latestApps.isEmpty { await refreshRepositoryCatalogs() }
             }
             .sheet(item: $selectedBanner) { banner in
                 bannerDestination(banner)
             }
             .sheet(item: $selectedApp) { app in
-                NOVAAppDetailView(app: app)
+                RepoAppDetailSheet(app: app)
             }
         }
     }
@@ -210,7 +218,7 @@ struct NOVAHomeView: View {
             Text("لا توجد تطبيقات حالياً")
                 .font(.headline)
             
-            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافتها من لوحة التحكم.")
+            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافة مصدر من قسم \"المصادر\".")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -220,9 +228,9 @@ struct NOVAHomeView: View {
     }
     
     @ViewBuilder
-    private func appRow(_ app: NOVAApp) -> some View {
+    private func appRow(_ app: RepoApp) -> some View {
         HStack(spacing: 13) {
-            CachedAppIcon(url: URL(string: app.icon), size: 58, cornerRadius: 15)
+            CachedAppIcon(url: app.iconURL, size: 58, cornerRadius: 15)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
@@ -230,21 +238,21 @@ struct NOVAHomeView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                if !app.subtitle.isEmpty {
-                    Text(app.subtitle)
+                if let dev = app.developerName, !dev.isEmpty {
+                    Text(dev)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 HStack(spacing: 7) {
-                    if !app.version.isEmpty {
-                        Text("v\(app.version)")
+                    if let version = app.version, !version.isEmpty {
+                        Text("v\(version)")
                     }
 
-                    if !app.size.isEmpty {
+                    if let size = app.size {
                         Text("•")
-                        Text(app.size)
+                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                     }
                 }
                 .font(.caption2.weight(.medium))
@@ -384,6 +392,7 @@ private struct BannerCard: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .bottomLeading) {
+                // التصحيح: استخدام banner.imageURL بدلاً من banner.image
                 AsyncImage(url: URL(string: banner.imageURL)) { phase in
                     switch phase {
                     case .success(let image):
@@ -484,9 +493,4 @@ private struct BannerExternalDestination: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-}
-
-#Preview {
-    NOVAHomeView()
-        .environmentObject(RepositoryStore())
 }
