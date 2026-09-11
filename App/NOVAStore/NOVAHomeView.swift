@@ -7,23 +7,13 @@ struct NOVAHomeView: View {
     @EnvironmentObject private var repositories: RepositoryStore
     
     @State private var selectedBanner: NOVABanner?
-    @State private var selectedApp: RepoApp?
+    @State private var selectedApp: NOVAApp?
     
-    /// "آخر التحديثات" now shows real apps from the sources the user actually
-    /// added (RepositoryStore), instead of requiring manual curation in the
-    /// separate NOVA-STORE apps.json control panel.
-    private var latestApps: [RepoApp] {
+    // تم تعديل هذا القسم ليجلب التطبيقات الخاصة بك مباشرة من لوحة التحكم (NOVAApp)
+    private var latestApps: [NOVAApp] {
         let limit = store.settings?.latestAppsLimit ?? 10
-        var seen = Set<String>()
-        var result: [RepoApp] = []
-        for repo in repositories.repositories {
-            guard let apps = repositories.catalog[repo.id]?.apps else { continue }
-            for app in apps where seen.insert(app.id).inserted {
-                result.append(app)
-                if result.count >= max(0, limit) { return result }
-            }
-        }
-        return result
+        let sorted = store.apps.sorted { $0.updatedAt > $1.updatedAt }
+        return Array(sorted.prefix(limit))
     }
     
     var body: some View {
@@ -62,19 +52,17 @@ struct NOVAHomeView: View {
             .task {
                 await store.refresh()
                 syncSources()
-                if latestApps.isEmpty { await refreshRepositoryCatalogs() }
+                if repositories.repositories.isEmpty { await refreshRepositoryCatalogs() }
             }
             .sheet(item: $selectedBanner) { banner in
                 bannerDestination(banner)
             }
             .sheet(item: $selectedApp) { app in
-                RepoAppDetailSheet(app: app)
+                NOVAAppDetailView(app: app)
             }
         }
     }
 
-    /// Fetches every added source concurrently so the "آخر التحديثات" section
-    /// has real data without waiting on the control-panel apps.json.
     private func refreshRepositoryCatalogs() async {
         await withTaskGroup(of: Void.self) { group in
             for repo in repositories.repositories {
@@ -222,7 +210,7 @@ struct NOVAHomeView: View {
             Text("لا توجد تطبيقات حالياً")
                 .font(.headline)
             
-            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافة مصدر من قسم \"المصادر\".")
+            Text("ستظهر التطبيقات هنا تلقائيًا بعد إضافتها من لوحة التحكم.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -232,9 +220,9 @@ struct NOVAHomeView: View {
     }
     
     @ViewBuilder
-    private func appRow(_ app: RepoApp) -> some View {
+    private func appRow(_ app: NOVAApp) -> some View {
         HStack(spacing: 13) {
-            CachedAppIcon(url: app.iconURL, size: 58, cornerRadius: 15)
+            CachedAppIcon(url: URL(string: app.icon), size: 58, cornerRadius: 15)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
@@ -242,21 +230,21 @@ struct NOVAHomeView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                if let dev = app.developerName, !dev.isEmpty {
-                    Text(dev)
+                if !app.subtitle.isEmpty {
+                    Text(app.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 HStack(spacing: 7) {
-                    if let version = app.version, !version.isEmpty {
-                        Text("v\(version)")
+                    if !app.version.isEmpty {
+                        Text("v\(app.version)")
                     }
 
-                    if let size = app.size {
+                    if !app.size.isEmpty {
                         Text("•")
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                        Text(app.size)
                     }
                 }
                 .font(.caption2.weight(.medium))
