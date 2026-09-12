@@ -50,7 +50,7 @@ struct NOVAHomeView: View {
 
                 if store.isLoading && store.apps.isEmpty && !didInitialRefresh {
                     VStack(spacing: 16) {
-                        ModernLoadingView(color: gradientStart)
+                        ModernPulseLoadingView(color: gradientStart)
                         Text("جاري التحميل...")
                             .font(.headline)
                             .foregroundStyle(.secondary)
@@ -58,7 +58,7 @@ struct NOVAHomeView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 24) {
-                            header // الهيدر بتأثير الأنترو (كتابة ومسح)
+                            header // الهيدر بتأثير الانترو القوي
 
                             if !store.banners.isEmpty {
                                 bannersSection
@@ -120,8 +120,8 @@ struct NOVAHomeView: View {
         HStack {
             Spacer()
             
-            // استدعاء تأثير الانترو القوي
-            IntroTitleView(text: store.settings?.name ?? "NOVA STORE")
+            // تأثير الانترو الاحترافي (الخط اللي يكتب ويمسح مع تأثير الجليتش)
+            GlitchScannerTitleView(text: store.settings?.name ?? "NOVA STORE")
             
             Spacer()
         }
@@ -161,6 +161,7 @@ struct NOVAHomeView: View {
                 ForEach(Array(backLayers.enumerated()), id: \.element.id) { offset, banner in
                     let depth = offset + 1
                     BannerCard(banner: banner)
+                        .id(banner.id) // حماية الكاش
                         .frame(height: 300)
                         .padding(.horizontal, 16)
                         .scaleEffect(1 - CGFloat(depth) * 0.045)
@@ -171,6 +172,7 @@ struct NOVAHomeView: View {
 
                 if let front = bannerOrder.first {
                     BannerCard(banner: front)
+                        .id("front-\(front.id)") // إجبار تحديث الصورة فوراً عند التقليب
                         .frame(height: 300)
                         .padding(.horizontal, 16)
                         .offset(dragOffset)
@@ -265,10 +267,8 @@ struct NOVAHomeView: View {
                     .font(.system(size: 28, weight: .medium))
                     .foregroundStyle(brandGradient)
             }
-
             Text("لا توجد تطبيقات حالياً")
                 .font(.headline)
-
             Text("قم بإضافة مصادر لتظهر التطبيقات هنا.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -342,15 +342,15 @@ struct NOVAHomeView: View {
     @ViewBuilder
     private func installPill(_ app: RepoApp) -> some View {
         if repositories.activeDownloadID == app.id {
-            // انيميشن التحميل الحديث (الموجة/النبض)
-            ModernLoadingView(color: .white)
+            // تأثير التحميل الجذري والجديد كلياً
+            ModernPulseLoadingView(color: .white)
                 .frame(width: 72, height: 32)
                 .background(brandGradient)
                 .clipShape(Capsule())
                 .transition(.scale.combined(with: .opacity))
         } else {
             Button {
-                Haptics.installSoundAndImpact()
+                Haptics.installSoundAndImpact() // الصوت الحيوي والاهتزاز
                 Task { await repositories.download(app) }
             } label: {
                 Text("تثبيت")
@@ -389,107 +389,136 @@ struct NOVAHomeView: View {
     }
 }
 
-// MARK: - Intro Title Effect (تأثير الانترو: كتابة ومسح مع خط قوي)
+// MARK: - Intro Title Effect (تأثير الانترو: خط يكتب ويمسح بقوة مع Glitch)
 
-private struct IntroTitleView: View {
+private struct GlitchScannerTitleView: View {
     let text: String
-    @State private var revealProgress: CGFloat = 0.0
+    @State private var progress: CGFloat = 0.0
+    @State private var glitchOffset: CGFloat = 0.0
 
     var body: some View {
         ZStack(alignment: .leading) {
-            // الخلفية الشفافة للنص ليعطي شعور الانترو
+            // النص المخفي بالخلفية
             Text(text)
-                .font(.system(size: 32, weight: .black, design: .rounded))
+                .font(.system(size: 34, weight: .black, design: .rounded))
                 .foregroundStyle(Color.gray.opacity(0.15))
 
-            // النص الذي يظهر ويختفي
-            Text(text)
-                .font(.system(size: 32, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(colors: [Color(hex: "7C3AED"), Color(hex: "A855F7")],
-                                   startPoint: .leading, endPoint: .trailing)
-                )
-                .mask(
-                    GeometryReader { geo in
-                        Rectangle()
-                            .frame(width: geo.size.width * revealProgress)
-                    }
-                )
-                .overlay(
-                    GeometryReader { geo in
-                        // مؤشر الكتابة الذهبي (الكرسور)
-                        Rectangle()
-                            .fill(Color(hex: "FFD700"))
-                            .frame(width: 3)
-                            .offset(x: (geo.size.width * revealProgress) - 1.5)
-                            .opacity(revealProgress > 0.01 && revealProgress < 0.99 ? 1 : 0)
-                            .shadow(color: Color(hex: "FFD700").opacity(0.6), radius: 4, x: 0, y: 0)
-                    }
-                )
+            // النص الظاهر بألوان المتجر وتأثير الجليتش
+            ZStack(alignment: .leading) {
+                // ظل سيان (أزرق سماوي)
+                Text(text)
+                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .foregroundColor(.cyan)
+                    .offset(x: glitchOffset, y: -glitchOffset * 0.5)
+                    .opacity(0.7)
+
+                // ظل ماجنتا (وردي)
+                Text(text)
+                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .foregroundColor(Color(hex: "FF00FF"))
+                    .offset(x: -glitchOffset, y: glitchOffset * 0.5)
+                    .opacity(0.7)
+
+                // النص الأصلي
+                Text(text)
+                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "7C3AED"), Color(hex: "A855F7")],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+            }
+            .mask(
+                GeometryReader { geo in
+                    Rectangle()
+                        .frame(width: max(0, geo.size.width * progress))
+                }
+            )
+
+            // خط الليزر (الماسح) اللي يتحرك ويكتب
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(Color.cyan)
+                    .shadow(color: .cyan, radius: 5, x: 0, y: 0)
+                    .shadow(color: Color(hex: "7C3AED"), radius: 10, x: 0, y: 0)
+                    .frame(width: 4)
+                    .offset(x: (geo.size.width * progress) - 2)
+                    .opacity(progress > 0.02 && progress < 0.98 ? 1 : 0)
+            }
         }
         .fixedSize(horizontal: true, vertical: false)
         .onAppear {
-            // حركة الكتابة والمسح مستمرة
-            withAnimation(.easeInOut(duration: 2.0).delay(0.5).repeatForever(autoreverses: true)) {
-                revealProgress = 1.0
+            // حركة الخط ذهاباً وإياباً (كتابة ومسح)
+            withAnimation(.easeInOut(duration: 2.2).delay(0.3).repeatForever(autoreverses: true)) {
+                progress = 1.0
+            }
+            // تأثير الجليتش العشوائي
+            Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+                if progress > 0.1 && progress < 0.9 && Int.random(in: 0...10) > 7 {
+                    glitchOffset = CGFloat.random(in: 2...4)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        glitchOffset = 0
+                    }
+                }
             }
         }
     }
 }
 
-// MARK: - Modern Loading View (تأثير تحميل جديد كلياً - أمواج صوتية/نبض)
+// MARK: - Modern Loading View (تأثير النبض والموجة)
 
-private struct ModernLoadingView: View {
+private struct ModernPulseLoadingView: View {
     let color: Color
     @State private var isAnimating = false
     
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             ForEach(0..<3) { index in
                 Capsule()
                     .fill(color)
-                    // اختلاف بالارتفاع يعطي شكل موجة
-                    .frame(width: 4, height: isAnimating ? 14 : 4)
+                    // تصميم الأعمدة المتصاعدة
+                    .frame(width: 4.5, height: isAnimating ? 16 : 6)
                     .animation(
-                        .easeInOut(duration: 0.5)
+                        .easeInOut(duration: 0.45)
                         .repeatForever(autoreverses: true)
                         .delay(Double(index) * 0.15),
                         value: isAnimating
                     )
             }
         }
-        .frame(height: 14)
+        .frame(height: 16)
         .onAppear { isAnimating = true }
     }
 }
 
-// MARK: - Banner Image Caching System (تم حل خطأ التزامن وإضافة @MainActor)
+// MARK: - Banner Image Caching System (حل مشكلة الكراش والثبات)
 
 @MainActor
 class BannerImageLoader: ObservableObject {
     @Published var image: UIImage?
     private static let cache = NSCache<NSString, UIImage>()
-    private var currentURL: String?
 
     func load(from urlString: String) {
-        self.currentURL = urlString
-        
-        // إذا الصورة موجودة بالذاكرة، اعرضها فوراً ولا تسوي أي طلب جديد (يمنع الكراش)
+        // إذا الصورة بالذاكرة، اعرضها مباشرة
         if let cached = Self.cache.object(forKey: urlString as NSString) {
             self.image = cached
             return
         }
+        
+        // تفريغ الصورة القديمة لمنع ظهورها بالبنر الجديد
+        self.image = nil
         
         guard let url = URL(string: urlString) else { return }
         
         Task {
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                guard self.currentURL == urlString, let uiImage = UIImage(data: data) else { return }
+                guard let uiImage = UIImage(data: data) else { return }
                 Self.cache.setObject(uiImage, forKey: urlString as NSString)
                 self.image = uiImage
             } catch {
-                // خطأ صامت في حال فشل التحميل لعدم إحداث كراش
+                // خطأ صامت بدون كراش
             }
         }
     }
@@ -507,18 +536,22 @@ private struct CachedBannerImage: View {
                     .scaledToFill()
             } else {
                 ZStack {
-                    Color(hex: "F3E8FF") // لون خلفية هادئ أثناء التحميل
-                    ModernLoadingView(color: Color(hex: "7C3AED"))
+                    Color(hex: "F3E8FF") // لون خلفية البنر أثناء التحميل
+                    ModernPulseLoadingView(color: Color(hex: "7C3AED"))
                 }
             }
         }
         .onAppear {
             loader.load(from: urlString)
         }
+        // تحديث الصورة إجبارياً عند التقليب بين البنرات
+        .onChange(of: urlString) { newURL in
+            loader.load(from: newURL)
+        }
     }
 }
 
-// MARK: - Banner Card (استخدام نظام التكييش الجديد)
+// MARK: - Banner Card
 
 private struct BannerCard: View {
     let banner: NOVABanner
@@ -535,7 +568,7 @@ private struct BannerCard: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 
-                // استخدام الصورة المكيشة (بدون كراش وبدون تحميل متكرر)
+                // استخدام نظام التحميل الثابت
                 CachedBannerImage(urlString: banner.imageURL)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
@@ -595,7 +628,7 @@ private struct BannerCard: View {
     }
 }
 
-// MARK: - Press animation & haptics (تم حل مشكلة التزامن بإضافة @MainActor)
+// MARK: - Press animation & haptics
 
 private struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -606,14 +639,16 @@ private struct PressableStyle: ButtonStyle {
     }
 }
 
-@MainActor // إضافة حماية التزامن لحل خطأ الـ UIImpactFeedbackGenerator
+@MainActor
 private enum Haptics {
     static func tap() { UISelectionFeedbackGenerator().selectionChanged() }
     static func impact() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
     
+    // الصوت الحيوي والمفرح
     static func installSoundAndImpact() {
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred() // هزة قوية ومحسوسة
-        AudioServicesPlaySystemSound(1520) // صوت 'Pop' احترافي جداً وواضح للاستجابة
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        // صوت النظام (1057 Tink) أو (1407) يعطي حيوية وتفاعل سريع
+        AudioServicesPlaySystemSound(1407) 
     }
 }
 
