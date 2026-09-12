@@ -1,17 +1,7 @@
 import SwiftUI
 import AudioToolbox
 
-// MARK: - VIP Data Models (Secure)
-struct NOVAVIPEncryptedItem: Codable {
-    let id: String
-    let data: String // النص المحمي
-}
-
-struct NOVAVIPResponse: Codable {
-    let secure_accounts: [NOVAVIPEncryptedItem]
-}
-
-// الموديل الحقيقي 
+// MARK: - VIP Data Models
 struct NOVAVIPAccount: Codable {
     let id: String
     let username: String
@@ -19,7 +9,6 @@ struct NOVAVIPAccount: Codable {
     let code: String
     let enabled: Bool
     
-    // تاريخ الإنشاء ومدة الاشتراك لتفعيل التحقق الداخلي
     let created_at: String
     let duration: String
     let duration_type: String
@@ -28,7 +17,7 @@ struct NOVAVIPAccount: Codable {
     let p12_base64: String?
     let prov_base64: String?
     
-    // فحص انتهاء الصلاحية
+    // التحقق من انتهاء الصلاحية داخلياً
     var isExpired: Bool {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -45,8 +34,12 @@ struct NOVAVIPAccount: Codable {
         }
         
         guard let finalEndDate = endDate else { return true }
-        return Date() > finalEndDate // إذا عبر الوقت يعني منتهي
+        return Date() > finalEndDate
     }
+}
+
+struct NOVAVIPResponse: Codable {
+    let accounts: [NOVAVIPAccount]
 }
 
 // MARK: - VIP Login View
@@ -138,61 +131,44 @@ struct NOVAVIPLoginView: View {
         }
     }
     
-    // MARK: - Verification Logic 
     private func verifyVIP() {
         isLoading = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        let rawURL = "https://raw.githubusercontent.com/GFIOPZ/NOVA-STORE/main/vip.json"
-        
-        guard let url = URL(string: rawURL) else {
-            showError(msg: "رابط التحقق غير صالح.")
-            return
-        }
+        // الرابط الخاص بسيرفرك
+        guard let url = URL(string: "https://nova-api.hassanyipa.workers.dev/?file=vip.json") else { return }
         
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        // إرسال القفل السري للسيرفر
+        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 isLoading = false
                 
                 guard let data = data, error == nil else {
-                    showError(msg: "تعذر الاتصال بخادم NOVA. تأكد من اتصال الإنترنت.")
+                    showError(msg: "تعذر الاتصال بالسيرفر. تأكد من اتصال الإنترنت.")
                     return
                 }
                 
                 do {
                     let result = try JSONDecoder().decode(NOVAVIPResponse.self, from: data)
-                    var foundAccount: NOVAVIPAccount?
                     
-                    // فك حماية البيانات
-                    for encItem in result.secure_accounts {
-                        if let decAccount = decodeVIPData(encItem.data) {
-                            if decAccount.username == username && decAccount.password == password && decAccount.code == code {
-                                foundAccount = decAccount
-                                break
-                            }
-                        }
-                    }
-                    
-                    if let account = foundAccount {
-                        // 1. التحقق من الحظر الإداري
+                    if let account = result.accounts.first(where: { $0.username == username && $0.password == password && $0.code == code }) {
+                        
                         if !account.enabled {
                             showError(msg: "هذا الحساب معطل حالياً من الإدارة.")
                             return
                         }
-                        // 2. التحقق من الوقت الداخلي (أيام أو دقائق)
                         if account.isExpired {
                             showError(msg: "عذراً، لقد انتهت مدة اشتراكك في المتجر.")
                             return
                         }
                         
-                        // النجاح!
                         AudioServicesPlaySystemSound(1407)
                         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         
-                        // استيراد الشهادة تلقائياً إذا كانت موجودة
                         if let p12 = account.p12_base64, !p12.isEmpty,
                            let prov = account.prov_base64, !prov.isEmpty {
                             autoImportCertificates(p12Base64: p12, provBase64: prov, password: account.cert_password ?? "")
@@ -201,7 +177,6 @@ struct NOVAVIPLoginView: View {
                         withAnimation(.easeInOut) {
                             isVIPLoggedIn = true
                         }
-                        
                     } else {
                         showError(msg: "المعلومات غير صحيحة. يرجى التأكد من اليوزر، الباسورد، والكود.")
                     }
@@ -212,16 +187,6 @@ struct NOVAVIPLoginView: View {
         }.resume()
     }
     
-    // دالة فك حماية الـ Base64 المزدوجة المتطابقة مع لوحة التحكم
-    private func decodeVIPData(_ encodedString: String) -> NOVAVIPAccount? {
-        guard let data = Data(base64Encoded: encodedString),
-              let decodedString = String(data: data, encoding: .utf8),
-              let finalString = decodedString.removingPercentEncoding,
-              let jsonData = finalString.data(using: .utf8) else { return nil }
-        
-        return try? JSONDecoder().decode(NOVAVIPAccount.self, from: jsonData)
-    }
-
     private func autoImportCertificates(p12Base64: String, provBase64: String, password: String) {
         guard let p12Data = Data(base64Encoded: p12Base64, options: .ignoreUnknownCharacters),
               let provData = Data(base64Encoded: provBase64, options: .ignoreUnknownCharacters) else { return }
