@@ -1,45 +1,18 @@
 import SwiftUI
 import AudioToolbox
 
-// MARK: - VIP Data Models
+// الموديلات الخاصة بالرد من السيرفر
 struct NOVAVIPAccount: Codable {
-    let id: String
     let username: String
-    let password: String
-    let code: String
-    let enabled: Bool
-    
-    let created_at: String
-    let duration: String
-    let duration_type: String
-    
     let cert_password: String?
     let p12_base64: String?
     let prov_base64: String?
-    
-    // التحقق من انتهاء الصلاحية داخلياً
-    var isExpired: Bool {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let startDate = formatter.date(from: created_at),
-              let durationValue = Int(duration) else { return true }
-        
-        var endDate: Date?
-        if duration_type == "days" {
-            endDate = Calendar.current.date(byAdding: .day, value: durationValue, to: startDate)
-        } else if duration_type == "minutes" {
-            endDate = Calendar.current.date(byAdding: .minute, value: durationValue, to: startDate)
-        } else if duration_type == "months" {
-            endDate = Calendar.current.date(byAdding: .month, value: durationValue, to: startDate)
-        }
-        
-        guard let finalEndDate = endDate else { return true }
-        return Date() > finalEndDate
-    }
 }
 
-struct NOVAVIPResponse: Codable {
-    let accounts: [NOVAVIPAccount]
+struct APILoginResponse: Codable {
+    let success: Bool?
+    let error: String?
+    let account: NOVAVIPAccount?
 }
 
 // MARK: - VIP Login View
@@ -99,11 +72,9 @@ struct NOVAVIPLoginView: View {
                 Button(action: verifyVIP) {
                     HStack {
                         if isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
-                            Text("تسجيل الدخول")
-                                .font(.headline.weight(.bold))
+                            Text("تسجيل الدخول").font(.headline.weight(.bold))
                         }
                     }
                     .foregroundColor(.white)
@@ -124,24 +95,31 @@ struct NOVAVIPLoginView: View {
                 Spacer()
             }
         }
-        .alert("فشل تسجيل الدخول", isPresented: $showError) {
+        .alert("إشعار", isPresented: $showError) {
             Button("حسناً", role: .cancel) { }
         } message: {
             Text(errorMessage)
         }
     }
     
+    // MARK: - Verification Logic (True API Mode)
     private func verifyVIP() {
         isLoading = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        // الرابط الخاص بسيرفرك
-        guard let url = URL(string: "https://nova-api.hassanyipa.workers.dev/?file=vip.json") else { return }
-        
+        guard let url = URL(string: "https://nova-api.hassanyipa.workers.dev/") else { return }
         var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        // إرسال القفل السري للسيرفر
-        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
+        
+        // إرسال البيانات بشكل مخفي للسيرفر
+        let bodyData: [String: String] = [
+            "username": username.trimmingCharacters(in: .whitespacesAndNewlines),
+            "password": password.trimmingCharacters(in: .whitespacesAndNewlines),
+            "code": code.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: bodyData)
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
@@ -153,22 +131,14 @@ struct NOVAVIPLoginView: View {
                 }
                 
                 do {
-                    let result = try JSONDecoder().decode(NOVAVIPResponse.self, from: data)
+                    let result = try JSONDecoder().decode(APILoginResponse.self, from: data)
                     
-                    if let account = result.accounts.first(where: { $0.username == username && $0.password == password && $0.code == code }) {
-                        
-                        if !account.enabled {
-                            showError(msg: "هذا الحساب معطل حالياً من الإدارة.")
-                            return
-                        }
-                        if account.isExpired {
-                            showError(msg: "عذراً، لقد انتهت مدة اشتراكك في المتجر.")
-                            return
-                        }
-                        
+                    if result.success == true, let account = result.account {
+                        // نجاح الدخول
                         AudioServicesPlaySystemSound(1407)
                         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         
+                        // استيراد الشهادة
                         if let p12 = account.p12_base64, !p12.isEmpty,
                            let prov = account.prov_base64, !prov.isEmpty {
                             autoImportCertificates(p12Base64: p12, provBase64: prov, password: account.cert_password ?? "")
@@ -178,10 +148,13 @@ struct NOVAVIPLoginView: View {
                             isVIPLoggedIn = true
                         }
                     } else {
-                        showError(msg: "المعلومات غير صحيحة. يرجى التأكد من اليوزر، الباسورد، والكود.")
+                        // عرض الخطأ اللي يرسله السيرفر (منتهي، محظور، غلط)
+                        showError(msg: result.error ?? "معلومات غير صحيحة.")
                     }
                 } catch {
-                    showError(msg: "حدث خطأ أثناء قراءة بيانات الخادم.")
+                    // إذا صار كراش راح يطبعلك الرد بالضبط حتى نعرف الخلل
+                    let rawString = String(data: data, encoding: .utf8) ?? "غير معروف"
+                    showError(msg: "خطأ في السيرفر:\n\(rawString)")
                 }
             }
         }.resume()
