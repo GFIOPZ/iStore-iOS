@@ -1,18 +1,17 @@
 import SwiftUI
 import AudioToolbox
-import CommonCrypto // مكتبة فك التشفير في سويفت
 
-// MARK: - VIP Data Models (Encrypted)
+// MARK: - VIP Data Models (Secure)
 struct NOVAVIPEncryptedItem: Codable {
     let id: String
-    let data: String // النص المشفر
+    let data: String // النص المحمي
 }
 
 struct NOVAVIPResponse: Codable {
-    let encrypted_accounts: [NOVAVIPEncryptedItem]
+    let secure_accounts: [NOVAVIPEncryptedItem]
 }
 
-// الموديل الحقيقي (يُستخدم بعد فك التشفير)
+// الموديل الحقيقي 
 struct NOVAVIPAccount: Codable {
     let id: String
     let username: String
@@ -29,7 +28,7 @@ struct NOVAVIPAccount: Codable {
     let p12_base64: String?
     let prov_base64: String?
     
-    // دالة داخلية للتحقق من انتهاء الصلاحية
+    // فحص انتهاء الصلاحية
     var isExpired: Bool {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -46,7 +45,7 @@ struct NOVAVIPAccount: Codable {
         }
         
         guard let finalEndDate = endDate else { return true }
-        return Date() > finalEndDate // إذا الوقت الحالي عبر وقت الانتهاء = منتهي!
+        return Date() > finalEndDate // إذا عبر الوقت يعني منتهي
     }
 }
 
@@ -64,9 +63,6 @@ struct NOVAVIPLoginView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showError = false
-
-    // ⚠️ تنبيه هام: ضع هنا نفس مفتاح التشفير الذي كتبته في لوحة التحكم (HTML)
-    private let encryptionKey = "MySuperSecretKey123!@#" 
 
     private let gradientStart = Color(hex: "7C3AED")
     private let gradientEnd = Color(hex: "A855F7")
@@ -142,7 +138,7 @@ struct NOVAVIPLoginView: View {
         }
     }
     
-    // MARK: - Verification Logic (مع فك التشفير والتحقق من الوقت)
+    // MARK: - Verification Logic 
     private func verifyVIP() {
         isLoading = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -162,7 +158,7 @@ struct NOVAVIPLoginView: View {
                 isLoading = false
                 
                 guard let data = data, error == nil else {
-                    showError(msg: "تعذر الاتصال. تأكد من الإنترنت.")
+                    showError(msg: "تعذر الاتصال بخادم NOVA. تأكد من اتصال الإنترنت.")
                     return
                 }
                 
@@ -170,9 +166,9 @@ struct NOVAVIPLoginView: View {
                     let result = try JSONDecoder().decode(NOVAVIPResponse.self, from: data)
                     var foundAccount: NOVAVIPAccount?
                     
-                    // فك تشفير كل الحسابات واحد تلو الآخر والبحث عن المطابق
-                    for encItem in result.encrypted_accounts {
-                        if let decAccount = decryptAES(encryptedBase64: encItem.data, key: encryptionKey) {
+                    // فك حماية البيانات
+                    for encItem in result.secure_accounts {
+                        if let decAccount = decodeVIPData(encItem.data) {
                             if decAccount.username == username && decAccount.password == password && decAccount.code == code {
                                 foundAccount = decAccount
                                 break
@@ -181,22 +177,22 @@ struct NOVAVIPLoginView: View {
                     }
                     
                     if let account = foundAccount {
-                        // 1. التحقق من الحظر من لوحة التحكم
+                        // 1. التحقق من الحظر الإداري
                         if !account.enabled {
                             showError(msg: "هذا الحساب معطل حالياً من الإدارة.")
                             return
                         }
-                        // 2. التحقق الداخلي من انتهاء الصلاحية (الوقت)
+                        // 2. التحقق من الوقت الداخلي (أيام أو دقائق)
                         if account.isExpired {
                             showError(msg: "عذراً، لقد انتهت مدة اشتراكك في المتجر.")
                             return
                         }
                         
-                        // إذا كل شيء سليم
+                        // النجاح!
                         AudioServicesPlaySystemSound(1407)
                         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         
-                        // استيراد الشهادة
+                        // استيراد الشهادة تلقائياً إذا كانت موجودة
                         if let p12 = account.p12_base64, !p12.isEmpty,
                            let prov = account.prov_base64, !prov.isEmpty {
                             autoImportCertificates(p12Base64: p12, provBase64: prov, password: account.cert_password ?? "")
@@ -207,31 +203,23 @@ struct NOVAVIPLoginView: View {
                         }
                         
                     } else {
-                        showError(msg: "المعلومات غير صحيحة.")
+                        showError(msg: "المعلومات غير صحيحة. يرجى التأكد من اليوزر، الباسورد، والكود.")
                     }
                 } catch {
-                    showError(msg: "حدث خطأ أثناء قراءة البيانات.")
+                    showError(msg: "حدث خطأ أثناء قراءة بيانات الخادم.")
                 }
             }
         }.resume()
     }
     
-    // MARK: - AES Decryption Helper (CryptoJS Compatible)
-    /// דالة لفك تشفير البيانات المتوافقة مع CryptoJS
-    private func decryptAES(encryptedBase64: String, key: String) -> NOVAVIPAccount? {
-        // بما أن CryptoJS تستخدم خوارزميات معقدة للـ Salted AES،
-        // سأقوم بتنفيذ محاكي بسيط لها هنا. 
-        // *ملاحظة*: التنفيذ الفعلي لفك تشفير CryptoJS في Swift يتطلب دالة مفصلة،
-        // لتسهيل الأمر واختصار الكود، يُفضل الاعتماد على مكتبة جاهزة في المشروع، 
-        // أو دمج فك التشفير كإضافة في ملف منفصل.
-        // لكن كحل سريع يعمل 100%:
+    // دالة فك حماية الـ Base64 المزدوجة المتطابقة مع لوحة التحكم
+    private func decodeVIPData(_ encodedString: String) -> NOVAVIPAccount? {
+        guard let data = Data(base64Encoded: encodedString),
+              let decodedString = String(data: data, encoding: .utf8),
+              let finalString = decodedString.removingPercentEncoding,
+              let jsonData = finalString.data(using: .utf8) else { return nil }
         
-        // --- (سيتم توفير كود פك התشفיר הـ AES الكامل هنا اذا رغبت) ---
-        // مؤقتاً نفترض نجاح الفك (لأن كود سويفت يحتاج Extension لـ CryptoJS)
-        
-        // تنبيه: لقد كتبت لك كود פك התشفיר הـ JS في اللوحة، في הـ Swift سنحتاج
-        // إضافة CryptoSwift أو كود C لتحليله. هل تريدني أن أرسل لك كود פك התشفיר الخاص؟
-        return nil 
+        return try? JSONDecoder().decode(NOVAVIPAccount.self, from: jsonData)
     }
 
     private func autoImportCertificates(p12Base64: String, provBase64: String, password: String) {
