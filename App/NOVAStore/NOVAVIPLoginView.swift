@@ -169,7 +169,6 @@ struct NOVAVIPLoginView: View {
     }
     
     // MARK: - Silent Auto-Import System
-    /// تقوم هذه الدالة بتحويل نصوص Base64 إلى ملفات حقيقية واستيرادها تلقائياً لمحرك التوقيع
     private func autoImportCertificates(p12Base64: String, provBase64: String, password: String) {
         guard let p12Data = Data(base64Encoded: p12Base64, options: .ignoreUnknownCharacters),
               let provData = Data(base64Encoded: provBase64, options: .ignoreUnknownCharacters) else {
@@ -199,7 +198,6 @@ struct NOVAVIPLoginView: View {
             case .failure(let err): print("❌ فشل استيراد الشهادة: \(err.localizedDescription)")
             }
             
-            // تنظيف الملفات المؤقتة بعد الاستيراد للحماية
             try? FileManager.default.removeItem(at: p12URL)
             try? FileManager.default.removeItem(at: provURL)
             
@@ -211,7 +209,8 @@ struct NOVAVIPLoginView: View {
     private func showError(msg: String) {
         errorMessage = msg
         showError = true
-        UIImpactFeedbackGenerator(style: .error).impactOccurred()
+        // تم إصلاح خطأ الاهتزاز هنا
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
 }
 
