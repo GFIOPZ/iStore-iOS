@@ -101,6 +101,7 @@ struct ForgeSignMobileApp: App {
     @AppStorage("app.language")
     private var languageCode = AppLanguage.arabic.rawValue
 
+    // المحركات المسؤولة عن التوقيع وإدارة التطبيقات
     @StateObject private var certificates = CertificateStore()
     @StateObject private var profiles = ProfileStore()
     @StateObject private var history = HistoryStore()
@@ -122,6 +123,7 @@ struct ForgeSignMobileApp: App {
                 .environment(\.appLanguage, language)
                 .environment(\.locale, language.locale)
                 .environment(\.layoutDirection, language.layoutDirection)
+                // تمرير المحركات لكل الواجهات حتى يعمل الاستيراد التلقائي للشهادات في الـ VIP
                 .environmentObject(certificates)
                 .environmentObject(profiles)
                 .environmentObject(history)
@@ -134,38 +136,49 @@ struct ForgeSignMobileApp: App {
 private struct ForgeRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var tab = 0
+    
+    // جلب حالة تسجيل الدخول لمعرفة إذا كان المستخدم VIP أو لا
+    @AppStorage("isVIPLoggedIn") private var isVIPLoggedIn = false
 
     private var theme: ForgeTheme {
         colorScheme == .dark ? .dark : .light
     }
 
     var body: some View {
-        TabView(selection: $tab) {
-            NOVAHomeView()
-                .tabItem {
-                    Label("الرئيسية", systemImage: tab == 0 ? "house.fill" : "house")
-                }
-                .tag(0)
+        Group {
+            // الشرط الذكي: إذا المشترك مسجل دخول يروح للمتجر (التابات)، إذا لا تطلعله واجهة الدخول الفخمة
+            if isVIPLoggedIn {
+                TabView(selection: $tab) {
+                    NOVAHomeView()
+                        .tabItem {
+                            Label("الرئيسية", systemImage: tab == 0 ? "house.fill" : "house")
+                        }
+                        .tag(0)
 
-            NOVAAppsView()
-                .tabItem {
-                    Label("التطبيقات", systemImage: tab == 1 ? "square.grid.2x2.fill" : "square.grid.2x2")
-                }
-                .tag(1)
+                    NOVAAppsView()
+                        .tabItem {
+                            Label("التطبيقات", systemImage: tab == 1 ? "square.grid.2x2.fill" : "square.grid.2x2")
+                        }
+                        .tag(1)
 
-            ContentView()
-                .tabItem {
-                    Label("التوقيع", systemImage: tab == 2 ? "signature" : "signature")
-                }
-                .tag(2)
+                    ContentView()
+                        .tabItem {
+                            Label("التوقيع", systemImage: tab == 2 ? "signature" : "signature")
+                        }
+                        .tag(2)
 
-            AboutView()
-                .tabItem {
-                    Label("الإعدادات", systemImage: tab == 3 ? "gearshape.fill" : "gearshape")
+                    AboutView()
+                        .tabItem {
+                            Label("الإعدادات", systemImage: tab == 3 ? "gearshape.fill" : "gearshape")
+                        }
+                        .tag(3)
                 }
-                .tag(3)
+                .tint(theme.accent)
+            } else {
+                // عرض واجهة تسجيل الدخول كأول شاشة
+                NOVAVIPLoginView()
+            }
         }
-        .tint(theme.accent)
         .forgeTheme(theme)
         .forgeScaledType()
     }
