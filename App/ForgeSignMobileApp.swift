@@ -101,7 +101,6 @@ struct ForgeSignMobileApp: App {
     @AppStorage("app.language")
     private var languageCode = AppLanguage.arabic.rawValue
 
-    // المحركات المسؤولة عن التوقيع وإدارة التطبيقات
     @StateObject private var certificates = CertificateStore()
     @StateObject private var profiles = ProfileStore()
     @StateObject private var history = HistoryStore()
@@ -123,7 +122,6 @@ struct ForgeSignMobileApp: App {
                 .environment(\.appLanguage, language)
                 .environment(\.locale, language.locale)
                 .environment(\.layoutDirection, language.layoutDirection)
-                // تمرير المحركات لكل الواجهات حتى يعمل الاستيراد التلقائي للشهادات في الـ VIP
                 .environmentObject(certificates)
                 .environmentObject(profiles)
                 .environmentObject(history)
@@ -135,10 +133,14 @@ struct ForgeSignMobileApp: App {
 
 private struct ForgeRootView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) var scenePhase
     @State private var tab = 0
     
-    // جلب حالة تسجيل الدخول لمعرفة إذا كان المستخدم VIP أو لا
+    // جلب حالة تسجيل الدخول المحفوظة
     @AppStorage("isVIPLoggedIn") private var isVIPLoggedIn = false
+    @AppStorage("vip_username") private var vipUsername = ""
+    @AppStorage("vip_password") private var vipPassword = ""
+    @AppStorage("vip_code") private var vipCode = ""
 
     private var theme: ForgeTheme {
         colorScheme == .dark ? .dark : .light
@@ -146,7 +148,6 @@ private struct ForgeRootView: View {
 
     var body: some View {
         Group {
-            // الشرط الذكي: إذا المشترك مسجل دخول يروح للمتجر (التابات)، إذا لا تطلعله واجهة الدخول الفخمة
             if isVIPLoggedIn {
                 TabView(selection: $tab) {
                     NOVAHomeView()
@@ -174,12 +175,51 @@ private struct ForgeRootView: View {
                         .tag(3)
                 }
                 .tint(theme.accent)
+                .onChange(of: scenePhase) { newPhase in
+                    // عند فتح التطبيق، يتم فحص الحساب بالخلفية
+                    if newPhase == .active {
+                        silentVIPCheck()
+                    }
+                }
             } else {
-                // عرض واجهة تسجيل الدخول كأول شاشة
                 NOVAVIPLoginView()
             }
         }
         .forgeTheme(theme)
         .forgeScaledType()
+    }
+    
+    // MARK: - Silent VIP Background Check
+    private func silentVIPCheck() {
+        guard !vipUsername.isEmpty, let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
+        
+        let bodyData: [String: String] = [
+            "username": vipUsername,
+            "password": vipPassword,
+            "code": vipCode
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: bodyData)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard let data = data, error == nil else { return }
+            
+            if let result = try? JSONDecoder().decode(APILoginResponse.self, from: data) {
+                // إذا رفض السيرفر الدخول (الحساب معطل أو منتهي الصلاحية)
+                if result.success != true {
+                    DispatchQueue.main.async {
+                        // إبطال حالة تسجيل الدخول وطرد المستخدم
+                        isVIPLoggedIn = false
+                        vipUsername = ""
+                        vipPassword = ""
+                        vipCode = ""
+                    }
+                }
+            }
+        }.resume()
     }
 }
