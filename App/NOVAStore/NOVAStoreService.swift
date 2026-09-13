@@ -6,11 +6,13 @@ final class NOVAStoreService: ObservableObject {
     
     static let shared = NOVAStoreService()
     
-    // يجب أن يكون مستودع NOVA-STORE عاماً حتى يستطيع التطبيق
-    // تحميل ملفات JSON مباشرة من GitHub.
+    // البوابة الجديدة الآمنة (Cloudflare Proxy)
     private let baseURL = URL(
-        string: "https://raw.githubusercontent.com/GFIOPZ/NOVA-STORE/main/"
+        string: "https://nova-ipa.hassanyipa.workers.dev/"
     )!
+    
+    // القفل السري للوصول إلى بيانات المستودع الخاص
+    private let apiSecret = "SuperNova2026!"
     
     // MARK: - Published Data
     
@@ -45,20 +47,13 @@ final class NOVAStoreService: ObservableObject {
         }
         
         do {
-            async let appsResponse: NOVAAppsResponse =
-                fetch("apps.json")
+            async let appsResponse: NOVAAppsResponse = fetch("apps.json")
+            async let bannersResponse: NOVABannersResponse = fetch("banners.json")
             
-            async let bannersResponse: NOVABannersResponse =
-                fetch("banners.json")
-            
-            async let categoriesResponse: NOVACategoriesResponse =
-                fetch("categories.json")
-            
-            async let sourcesResponse: NOVASourcesResponse =
-                fetch("sources.json")
-            
-            async let settingsResponse: NOVASettingsResponse =
-                fetch("settings.json")
+            // تأكد أن هذه الملفات موجودة في مستودعك وإلا ستفشل العملية
+            async let categoriesResponse: NOVACategoriesResponse = fetch("categories.json")
+            async let sourcesResponse: NOVASourcesResponse = fetch("sources.json")
+            async let settingsResponse: NOVASettingsResponse = fetch("settings.json")
             
             let (
                 appsResponseValue,
@@ -106,6 +101,7 @@ final class NOVAStoreService: ObservableObject {
             loaded = true
             
         } catch {
+            // سيتم عرض الخطأ هنا إذا كان أحد الملفات (مثل categories.json) غير موجود في GitHub
             errorMessage = error.localizedDescription
         }
     }
@@ -128,16 +124,25 @@ final class NOVAStoreService: ObservableObject {
         _ filename: String
     ) async throws -> T {
         
-        let url = baseURL.appendingPathComponent(filename)
+        // بناء الرابط ليكون: https://nova-ipa.hassanyipa.workers.dev/?file=apps.json
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "file", value: filename)
+        ]
+        
+        guard let url = components.url else {
+            throw URLError(.badURL)
+        }
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
         
-        let (data, response) = try await URLSession.shared.data(
-            for: request
-        )
+        // إرفاق القفل السري للعبور من بوابة كلاود فلير
+        request.setValue(apiSecret, forHTTPHeaderField: "Nova-Secret")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
