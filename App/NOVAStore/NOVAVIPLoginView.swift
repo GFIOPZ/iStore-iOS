@@ -11,7 +11,6 @@ struct NOVAVIPLoginView: View {
 
     @State private var showPassword = false
     @State private var isLoading = false
-
     @State private var errorMessage: String?
 
     var body: some View {
@@ -32,7 +31,11 @@ struct NOVAVIPLoginView: View {
 
                 VStack(spacing: 24) {
 
-                    Spacer(minLength: 50)
+                    Spacer(
+                        minLength: 50
+                    )
+
+                    // MARK: Logo
 
                     VStack(spacing: 10) {
 
@@ -40,8 +43,14 @@ struct NOVAVIPLoginView: View {
                             systemName:
                                 "lock.shield.fill"
                         )
-                        .font(.system(size: 55))
-                        .foregroundStyle(.white)
+                        .font(
+                            .system(
+                                size: 55
+                            )
+                        )
+                        .foregroundStyle(
+                            .white
+                        )
 
                         Text("NOVA STORE")
                             .font(
@@ -50,7 +59,9 @@ struct NOVAVIPLoginView: View {
                                     weight: .black
                                 )
                             )
-                            .foregroundStyle(.white)
+                            .foregroundStyle(
+                                .white
+                            )
 
                         Text("منطقة المشتركين")
                             .font(.headline)
@@ -59,31 +70,43 @@ struct NOVAVIPLoginView: View {
                             )
                     }
 
+                    // MARK: Login Card
+
                     VStack(spacing: 16) {
 
                         novaField(
-                            title: "اسم المستخدم",
-                            icon: "person.fill",
-                            text: $username
+                            title:
+                                "اسم المستخدم",
+                            icon:
+                                "person.fill",
+                            text:
+                                $username
                         )
 
                         passwordField()
 
                         novaField(
-                            title: "كود الاشتراك",
-                            icon: "key.fill",
-                            text: $code
+                            title:
+                                "كود الاشتراك",
+                            icon:
+                                "key.fill",
+                            text:
+                                $code
                         )
 
                         if let errorMessage {
 
                             Text(errorMessage)
                                 .font(.footnote)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(
+                                    .red
+                                )
                                 .multilineTextAlignment(
                                     .center
                                 )
-                                .padding(.horizontal)
+                                .padding(
+                                    .horizontal
+                                )
                         }
 
                         Button {
@@ -108,20 +131,30 @@ struct NOVAVIPLoginView: View {
                                             "arrow.right.circle.fill"
                                     )
 
-                                    Text("تسجيل الدخول")
-                                        .fontWeight(.bold)
+                                    Text(
+                                        "تسجيل الدخول"
+                                    )
+                                    .fontWeight(
+                                        .bold
+                                    )
                                 }
                             }
                             .frame(
                                 maxWidth: .infinity
                             )
-                            .frame(height: 54)
+                            .frame(
+                                height: 54
+                            )
                         }
                         .buttonStyle(
                             .borderedProminent
                         )
-                        .tint(.purple)
-                        .disabled(isLoading)
+                        .tint(
+                            .purple
+                        )
+                        .disabled(
+                            isLoading
+                        )
                     }
                     .padding(22)
                     .background(
@@ -140,9 +173,14 @@ struct NOVAVIPLoginView: View {
                         .white.opacity(0.45)
                     )
 
-                    Spacer(minLength: 30)
+                    Spacer(
+                        minLength: 30
+                    )
                 }
-                .padding(.horizontal, 20)
+                .padding(
+                    .horizontal,
+                    20
+                )
             }
         }
     }
@@ -158,14 +196,20 @@ struct NOVAVIPLoginView: View {
 
         HStack(spacing: 12) {
 
-            Image(systemName: icon)
-                .foregroundStyle(.purple)
+            Image(
+                systemName: icon
+            )
+            .foregroundStyle(
+                .purple
+            )
 
             TextField(
                 title,
                 text: text
             )
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(
+                .never
+            )
             .autocorrectionDisabled()
         }
         .padding()
@@ -181,7 +225,9 @@ struct NOVAVIPLoginView: View {
 
     // MARK: - Password
 
-    private func passwordField() -> some View {
+    private func passwordField()
+        -> some View
+    {
 
         HStack(spacing: 12) {
 
@@ -189,7 +235,9 @@ struct NOVAVIPLoginView: View {
                 systemName:
                     "lock.fill"
             )
-            .foregroundStyle(.purple)
+            .foregroundStyle(
+                .purple
+            )
 
             Group {
 
@@ -197,18 +245,22 @@ struct NOVAVIPLoginView: View {
 
                     TextField(
                         "كلمة المرور",
-                        text: $password
+                        text:
+                            $password
                     )
 
                 } else {
 
                     SecureField(
                         "كلمة المرور",
-                        text: $password
+                        text:
+                            $password
                     )
                 }
             }
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(
+                .never
+            )
             .autocorrectionDisabled()
 
             Button {
@@ -223,7 +275,9 @@ struct NOVAVIPLoginView: View {
                         ? "eye.slash.fill"
                         : "eye.fill"
                 )
-                .foregroundStyle(.purple)
+                .foregroundStyle(
+                    .purple
+                )
             }
         }
         .padding()
@@ -239,25 +293,33 @@ struct NOVAVIPLoginView: View {
 
     // MARK: - Login
 
-    private func performLogin() async {
+    private func performLogin()
+        async
+    {
 
         errorMessage = nil
 
         guard !username.isEmpty else {
+
             errorMessage =
                 "اكتب اسم المستخدم."
+
             return
         }
 
         guard !password.isEmpty else {
+
             errorMessage =
                 "اكتب كلمة المرور."
+
             return
         }
 
         guard !code.isEmpty else {
+
             errorMessage =
                 "اكتب كود الاشتراك."
+
             return
         }
 
@@ -270,9 +332,12 @@ struct NOVAVIPLoginView: View {
         do {
 
             try await auth.login(
-                username: username,
-                password: password,
-                code: code
+                username:
+                    username,
+                password:
+                    password,
+                code:
+                    code
             )
 
         } catch {
