@@ -4,41 +4,64 @@ import Combine
 @MainActor
 final class NOVAStoreService: ObservableObject {
 
+    // MARK: - Singleton
+
     static let shared = NOVAStoreService()
 
     // MARK: - Published Data
 
     @Published private(set) var apps: [NOVAApp] = []
+
     @Published private(set) var banners: [NOVABanner] = []
+
     @Published private(set) var categories: [NOVACategory] = []
+
     @Published private(set) var sources: [NOVASource] = []
+
     @Published private(set) var settings: NOVAStoreSettings?
 
     @Published private(set) var isLoading = false
+
     @Published private(set) var errorMessage: String?
 
-    // MARK: - Private
+    // MARK: - Configuration
 
-    private let baseURL = URL(
-        string: "https://nova-ipa.hassanyipa.workers.dev"
-    )!
+    private let baseURL =
+        URL(
+            string:
+                "https://nova-ipa.hassanyipa.workers.dev"
+        )!
 
-    private let decoder = JSONDecoder()
+    private let decoder =
+        JSONDecoder()
 
     private var loaded = false
+
+    // MARK: - Init
 
     private init() {}
 
     // MARK: - Refresh
 
-    func refresh(force: Bool = false) async {
+    func refresh(
+        force: Bool = false
+    ) async {
 
-        if loaded && !force {
+        // لا نعيد التحميل إذا البيانات موجودة
+        guard
+            !loaded || force
+        else {
             return
         }
 
-        guard NOVAAuthService.shared.isLoggedIn else {
-            errorMessage = "يجب تسجيل الدخول أولاً."
+        // يجب أن يكون المستخدم مسجل دخول
+        guard
+            NOVAAuthService.shared.isLoggedIn
+        else {
+
+            errorMessage =
+                "يجب تسجيل الدخول أولاً."
+
             return
         }
 
@@ -51,25 +74,35 @@ final class NOVAStoreService: ObservableObject {
 
         do {
 
-            async let appsResponse:
+            async let appsResult:
                 NOVAAppsResponse =
-                    fetch("apps.json")
+                    fetch(
+                        "apps.json"
+                    )
 
-            async let bannersResponse:
+            async let bannersResult:
                 NOVABannersResponse =
-                    fetch("banners.json")
+                    fetch(
+                        "banners.json"
+                    )
 
-            async let categoriesResponse:
+            async let categoriesResult:
                 NOVACategoriesResponse =
-                    fetch("categories.json")
+                    fetch(
+                        "categories.json"
+                    )
 
-            async let sourcesResponse:
+            async let sourcesResult:
                 NOVASourcesResponse =
-                    fetch("sources.json")
+                    fetch(
+                        "sources.json"
+                    )
 
-            async let settingsResponse:
+            async let settingsResult:
                 NOVASettingsResponse =
-                    fetch("settings.json")
+                    fetch(
+                        "settings.json"
+                    )
 
             let (
                 appsValue,
@@ -78,11 +111,11 @@ final class NOVAStoreService: ObservableObject {
                 sourcesValue,
                 settingsValue
             ) = try await (
-                appsResponse,
-                bannersResponse,
-                categoriesResponse,
-                sourcesResponse,
-                settingsResponse
+                appsResult,
+                bannersResult,
+                categoriesResult,
+                sourcesResult,
+                settingsResult
             )
 
             // MARK: Apps
@@ -101,7 +134,9 @@ final class NOVAStoreService: ObservableObject {
                         $0.enabled
                     }
                     .sorted {
-                        $0.sortOrder < $1.sortOrder
+                        $0.sortOrder
+                        <
+                        $1.sortOrder
                     }
 
             // MARK: Categories
@@ -128,6 +163,17 @@ final class NOVAStoreService: ObservableObject {
 
             loaded = true
 
+            print(
+                """
+                [NOVA STORE] Loaded successfully
+                Apps: \(apps.count)
+                Banners: \(banners.count)
+                Categories: \(categories.count)
+                Sources: \(sources.count)
+                Settings: \(settings != nil)
+                """
+            )
+
         } catch {
 
             errorMessage =
@@ -135,8 +181,7 @@ final class NOVAStoreService: ObservableObject {
 
             print(
                 """
-                [NOVA STORE]
-                Failed to load store data:
+                [NOVA STORE] Failed to load data:
                 \(error)
                 """
             )
@@ -146,7 +191,10 @@ final class NOVAStoreService: ObservableObject {
     // MARK: - Force Refresh
 
     func forceRefresh() async {
-        await refresh(force: true)
+
+        await refresh(
+            force: true
+        )
     }
 
     // MARK: - Find App
@@ -155,7 +203,9 @@ final class NOVAStoreService: ObservableObject {
         id: String?
     ) -> NOVAApp? {
 
-        guard let id else {
+        guard
+            let id
+        else {
             return nil
         }
 
@@ -164,7 +214,7 @@ final class NOVAStoreService: ObservableObject {
         }
     }
 
-    // MARK: - Fetch
+    // MARK: - Fetch Store File
 
     private func fetch<T: Decodable>(
         _ filename: String
@@ -173,107 +223,222 @@ final class NOVAStoreService: ObservableObject {
         let cleanFilename =
             filename
                 .trimmingCharacters(
-                    in: CharacterSet(
-                        charactersIn: "/"
-                    )
+                    in:
+                        CharacterSet(
+                            charactersIn:
+                                "/"
+                        )
                 )
 
         guard
-            let url = URL(
-                string:
-                    "\(baseURL.absoluteString)/v1/store/\(cleanFilename)"
-            )
+            !cleanFilename.isEmpty
         else {
-            throw URLError(.badURL)
+
+            throw NOVAStoreError
+                .invalidFileName
         }
 
-        // المصادقة أصبحت بواسطة Session Token
-        // ولا يوجد أي Secret داخل التطبيق.
-        let request =
-            try await NOVAAuthService.shared
-                .authorizedRequest(
-                    path:
-                        "/v1/store/\(cleanFilename)"
+        guard
+            let token =
+                NOVAAuthService.shared.token
+        else {
+
+            throw NOVAAuthError
+                .notLoggedIn
+        }
+
+        guard
+            let url =
+                URL(
+                    string:
+                        "\(baseURL.absoluteString)/v1/store/\(cleanFilename)"
                 )
+        else {
+
+            throw NOVAAuthError
+                .invalidURL
+        }
+
+        // MARK: Request
+
+        var request =
+            URLRequest(
+                url:
+                    url
+            )
+
+        request.httpMethod =
+            "GET"
+
+        request.cachePolicy =
+            .reloadIgnoringLocalCacheData
+
+        request.timeoutInterval =
+            20
+
+        request.setValue(
+            "Bearer \(token)",
+            forHTTPHeaderField:
+                "Authorization"
+        )
+
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField:
+                "Accept"
+        )
+
+        // MARK: Network
 
         let (
             data,
             response
         ) =
-            try await URLSession.shared.data(
-                for: request
-            )
+            try await URLSession.shared
+                .data(
+                    for:
+                        request
+                )
 
         guard
-            let httpResponse =
-                response as? HTTPURLResponse
+            let http =
+                response
+                    as? HTTPURLResponse
         else {
-            throw URLError(
-                .badServerResponse
-            )
+
+            throw NOVAAuthError
+                .invalidResponse
         }
 
-        switch httpResponse.statusCode {
+        // MARK: Status
+
+        switch
+            http.statusCode {
 
         case 200...299:
+
             break
 
-        case 401, 403:
+        case 401,
+             403:
 
+            // الجلسة انتهت أو غير صالحة
             await NOVAAuthService.shared
                 .validateSession()
 
-            throw URLError(
-                .userAuthenticationRequired
-            )
+            throw NOVAAuthError
+                .notLoggedIn
 
         case 404:
 
-            throw NSError(
-                domain:
-                    "NOVAStoreService",
-                code:
-                    404,
-                userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "ملف \(cleanFilename) غير موجود في مستودع NOVA-STORE."
-                ]
-            )
+            throw NOVAStoreError
+                .fileNotFound(
+                    cleanFilename
+                )
+
+        case 500...599:
+
+            throw NOVAStoreError
+                .serverError(
+                    http.statusCode
+                )
 
         default:
 
-            throw NSError(
-                domain:
-                    "NOVAStoreService",
-                code:
-                    httpResponse.statusCode,
-                userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "تعذر تحميل \(cleanFilename). رمز الخادم: \(httpResponse.statusCode)"
-                ]
-            )
+            throw NOVAStoreError
+                .httpError(
+                    http.statusCode
+                )
         }
+
+        // MARK: Decode
 
         do {
 
             return try decoder.decode(
                 T.self,
-                from: data
+                from:
+                    data
             )
 
         } catch {
 
             print(
                 """
-                [NOVA STORE]
-                JSON Decode Error:
-                \(cleanFilename)
-
-                \(error)
+                [NOVA STORE] JSON decode failed
+                File: \(cleanFilename)
+                Error: \(error)
                 """
             )
 
-            throw error
+            throw NOVAStoreError
+                .invalidData(
+                    cleanFilename
+                )
+        }
+    }
+}
+
+// MARK: - Store Errors
+
+enum NOVAStoreError:
+    LocalizedError {
+
+    case invalidFileName
+
+    case fileNotFound(
+        String
+    )
+
+    case httpError(
+        Int
+    )
+
+    case serverError(
+        Int
+    )
+
+    case invalidData(
+        String
+    )
+
+    var errorDescription:
+        String? {
+
+        switch self {
+
+        case .invalidFileName:
+
+            return
+                "اسم ملف المتجر غير صحيح."
+
+        case .fileNotFound(
+            let filename
+        ):
+
+            return
+                "ملف \(filename) غير موجود في NOVA-STORE."
+
+        case .httpError(
+            let status
+        ):
+
+            return
+                "تعذر تحميل بيانات المتجر. رمز الخادم: \(status)."
+
+        case .serverError(
+            let status
+        ):
+
+            return
+                "خادم NOVA STORE يواجه مشكلة مؤقتة. رمز الخادم: \(status)."
+
+        case .invalidData(
+            let filename
+        ):
+
+            return
+                "بيانات ملف \(filename) غير صالحة."
         }
     }
 }
