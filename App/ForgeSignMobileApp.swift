@@ -131,16 +131,19 @@ struct ForgeSignMobileApp: App {
     }
 }
 
+// حالة التحقق
+enum VIPValidationState {
+    case validating
+    case authorized
+}
+
 private struct ForgeRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) var scenePhase
     @State private var tab = 0
     
-    // جلب حالة تسجيل الدخول المحفوظة
     @AppStorage("isVIPLoggedIn") private var isVIPLoggedIn = false
-    @AppStorage("vip_username") private var vipUsername = ""
-    @AppStorage("vip_password") private var vipPassword = ""
-    @AppStorage("vip_code") private var vipCode = ""
+    @State private var validationState: VIPValidationState = .validating
 
     private var theme: ForgeTheme {
         colorScheme == .dark ? .dark : .light
@@ -149,37 +152,40 @@ private struct ForgeRootView: View {
     var body: some View {
         Group {
             if isVIPLoggedIn {
-                TabView(selection: $tab) {
-                    NOVAHomeView()
-                        .tabItem {
-                            Label("الرئيسية", systemImage: tab == 0 ? "house.fill" : "house")
+                if validationState == .validating {
+                    // شاشة التحقق الفخمة عند كل عملية فتح للتطبيق
+                    NOVAVIPValidationView {
+                        // نجاح التحقق -> ادخل للمتجر
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            validationState = .authorized
                         }
-                        .tag(0)
-
-                    NOVAAppsView()
-                        .tabItem {
-                            Label("التطبيقات", systemImage: tab == 1 ? "square.grid.2x2.fill" : "square.grid.2x2")
+                    } onFail: {
+                        // فشل التحقق -> اطرد المستخدم لواجهة تسجيل الدخول
+                        withAnimation(.easeIn) {
+                            isVIPLoggedIn = false
+                            validationState = .validating // تصفير الحالة للمرات القادمة
                         }
-                        .tag(1)
-
-                    ContentView()
-                        .tabItem {
-                            Label("التوقيع", systemImage: tab == 2 ? "signature" : "signature")
-                        }
-                        .tag(2)
-
-                    AboutView()
-                        .tabItem {
-                            Label("الإعدادات", systemImage: tab == 3 ? "gearshape.fill" : "gearshape")
-                        }
-                        .tag(3)
-                }
-                .tint(theme.accent)
-                .onChange(of: scenePhase) { newPhase in
-                    // فحص عند عودة التطبيق للواجهة
-                    if newPhase == .active {
-                        silentVIPCheck()
                     }
+                } else {
+                    // واجهة المتجر الرئيسية
+                    TabView(selection: $tab) {
+                        NOVAHomeView()
+                            .tabItem { Label("الرئيسية", systemImage: tab == 0 ? "house.fill" : "house") }
+                            .tag(0)
+
+                        NOVAAppsView()
+                            .tabItem { Label("التطبيقات", systemImage: tab == 1 ? "square.grid.2x2.fill" : "square.grid.2x2") }
+                            .tag(1)
+
+                        ContentView()
+                            .tabItem { Label("التوقيع", systemImage: tab == 2 ? "signature" : "signature") }
+                            .tag(2)
+
+                        AboutView()
+                            .tabItem { Label("الإعدادات", systemImage: tab == 3 ? "gearshape.fill" : "gearshape") }
+                            .tag(3)
+                    }
+                    .tint(theme.accent)
                 }
             } else {
                 NOVAVIPLoginView()
@@ -187,19 +193,89 @@ private struct ForgeRootView: View {
         }
         .forgeTheme(theme)
         .forgeScaledType()
+        .onChange(of: scenePhase) { newPhase in
+            // إجبار التطبيق على شاشة التحقق في كل مرة يعود فيها للواجهة
+            if newPhase == .active && isVIPLoggedIn {
+                validationState = .validating
+            }
+        }
+    }
+}
+
+// MARK: - شاشة التحقق من الترخيص (VIP Validation Screen)
+struct NOVAVIPValidationView: View {
+    @AppStorage("vip_username") private var vipUsername = ""
+    @AppStorage("vip_password") private var vipPassword = ""
+    @AppStorage("vip_code") private var vipCode = ""
+    
+    var onSuccess: () -> Void
+    var onFail: () -> Void
+    
+    @State private var isPulsing = false
+    private let gradientStart = Color(hex: "7C3AED")
+    private let gradientEnd = Color(hex: "A855F7")
+    
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground).ignoresSafeArea()
+            
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(gradientStart.opacity(0.15))
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(isPulsing ? 1.3 : 1.0)
+                        .opacity(isPulsing ? 0 : 1)
+                        .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false), value: isPulsing)
+                    
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 55))
+                        .foregroundStyle(
+                            LinearGradient(colors: [Color(hex: "FFD700"), Color(hex: "FFA500")],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .shadow(color: Color(hex: "FFD700").opacity(0.4), radius: 10, x: 0, y: 5)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("NOVA VIP")
+                        .font(.system(size: 28, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(colors: [gradientStart, gradientEnd],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                    
+                    Text("جاري التحقق من الترخيص...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: gradientStart))
+                    .scaleEffect(1.2)
+                    .padding(.top, 10)
+            }
+        }
+        .onAppear {
+            isPulsing = true
+            Task { await performCheck() }
+        }
     }
     
-    // MARK: - Silent VIP Background Check (الطرد الفوري اللحظي)
-    private func silentVIPCheck() {
-        guard !vipUsername.isEmpty, let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else { return }
+    private func performCheck() async {
+        // تأخير بسيط لإعطاء فخامة للشاشة وتجنب الوميض السريع
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        guard !vipUsername.isEmpty, let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else {
+            await MainActor.run { onFail() }
+            return
+        }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
-        
-        // إجبار التطبيق على جلب البيانات الحقيقية الآن وتجاهل أي كاش سابق
-        request.cachePolicy = .reloadIgnoringLocalCacheData 
+        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret")
+        request.cachePolicy = .reloadIgnoringLocalCacheData // منع استخدام الكاش القديم
         
         let bodyData: [String: String] = [
             "username": vipUsername,
@@ -208,30 +284,32 @@ private struct ForgeRootView: View {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: bodyData)
         
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard error == nil, let httpResponse = response as? HTTPURLResponse else { return }
-            
-            // إذا رجع السيرفر أي كود خطأ (401 مرفوض، 403 محظور، أو غيره) = طرد فوري!
-            if httpResponse.statusCode != 200 {
-                DispatchQueue.main.async {
-                    isVIPLoggedIn = false
-                    vipUsername = ""
-                    vipPassword = ""
-                    vipCode = ""
-                }
-            } else if let data = data {
-                // فحص احتياطي للبيانات
-                if let result = try? JSONDecoder().decode(APILoginResponse.self, from: data) {
-                    if result.success != true {
-                        DispatchQueue.main.async {
-                            isVIPLoggedIn = false
-                            vipUsername = ""
-                            vipPassword = ""
-                            vipCode = ""
-                        }
-                    }
-                }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await MainActor.run { onFail() }
+                return
             }
-        }.resume()
+            
+            if httpResponse.statusCode == 200 {
+                // نجاح التحقق
+                await MainActor.run { onSuccess() }
+            } else {
+                // طرد (مرفوض، محظور، أو منتهي)
+                await clearCredentialsAndFail()
+            }
+        } catch {
+            // في حال عدم وجود إنترنت، ممكن نخليه يعبر أو يرفض، الأفضل نطرده كإجراء أمني صارم
+            // أو نمرره مؤقتاً إذا ردنا تساهل. حالياً راح نرفض الدخول.
+            await MainActor.run { onFail() }
+        }
+    }
+    
+    @MainActor
+    private func clearCredentialsAndFail() {
+        vipUsername = ""
+        vipPassword = ""
+        vipCode = ""
+        onFail()
     }
 }
