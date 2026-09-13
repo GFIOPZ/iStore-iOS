@@ -5,11 +5,9 @@ import AudioToolbox
 private enum TabIconImage {
     static func make(symbol: String, selected: Bool) -> UIImage {
         let size = CGSize(width: 28, height: 28)
-
         let renderer = UIGraphicsImageRenderer(size: size)
 
         return renderer.image { _ in
-
             guard let image = UIImage(systemName: symbol) else {
                 return
             }
@@ -34,7 +32,6 @@ private enum TabIconImage {
     }
 }
 
-
 // MARK: - Application Delegate
 
 final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
@@ -51,10 +48,9 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
             launchOptions?[.shortcutItem]
             as? UIApplicationShortcutItem {
 
-            pendingShortcutURL =
-                socialURL(
-                    for: shortcut.type
-                )
+            pendingShortcutURL = socialURL(
+                for: shortcut.type
+            )
         }
 
         configureQuickActions(application)
@@ -64,53 +60,35 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
-
     private func configureQuickActions(
         _ application: UIApplication
     ) {
 
-        let telegram =
-            UIApplicationShortcutItem(
-                type:
-                    "com.hggdet.istore.telegram",
-                localizedTitle:
-                    "Telegram",
-                localizedSubtitle:
-                    nil,
-                icon:
-                    UIApplicationShortcutIcon(
-                        templateImageName:
-                            "QuickActionTelegram"
-                    ),
-                userInfo:
-                    nil
-            )
+        let telegram = UIApplicationShortcutItem(
+            type: "com.hggdet.istore.telegram",
+            localizedTitle: "Telegram",
+            localizedSubtitle: nil,
+            icon: UIApplicationShortcutIcon(
+                templateImageName: "QuickActionTelegram"
+            ),
+            userInfo: nil
+        )
 
-
-        let tiktok =
-            UIApplicationShortcutItem(
-                type:
-                    "com.hggdet.istore.tiktok",
-                localizedTitle:
-                    "TikTok",
-                localizedSubtitle:
-                    nil,
-                icon:
-                    UIApplicationShortcutIcon(
-                        templateImageName:
-                            "QuickActionTikTok"
-                    ),
-                userInfo:
-                    nil
-            )
-
+        let tiktok = UIApplicationShortcutItem(
+            type: "com.hggdet.istore.tiktok",
+            localizedTitle: "TikTok",
+            localizedSubtitle: nil,
+            icon: UIApplicationShortcutIcon(
+                templateImageName: "QuickActionTikTok"
+            ),
+            userInfo: nil
+        )
 
         application.shortcutItems = [
             telegram,
             tiktok
         ]
     }
-
 
     func applicationDidBecomeActive(
         _ application: UIApplication
@@ -121,28 +99,21 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
         CleanupManager.shared
             .checkPendingIPADeletionOnActivation()
 
-
-        guard
-            let url = pendingShortcutURL
-        else {
+        guard let url = pendingShortcutURL else {
             return
         }
 
         pendingShortcutURL = nil
 
-
         DispatchQueue.main.asyncAfter(
-            deadline:
-                .now() + 0.45
+            deadline: .now() + 0.45
         ) {
-
             application.open(
                 url,
                 options: [:]
             )
         }
     }
-
 
     func application(
         _ application: UIApplication,
@@ -152,22 +123,16 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
             @escaping (Bool) -> Void
     ) {
 
-        guard
-            let url =
-                socialURL(
-                    for: shortcutItem.type
-                )
-        else {
+        guard let url = socialURL(
+            for: shortcutItem.type
+        ) else {
 
             completionHandler(false)
-
             return
         }
 
-
         DispatchQueue.main.asyncAfter(
-            deadline:
-                .now() + 0.25
+            deadline: .now() + 0.25
         ) {
 
             application.open(
@@ -180,7 +145,6 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
         }
     }
 
-
     private func socialURL(
         for type: String
     ) -> URL? {
@@ -188,28 +152,20 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
         switch type {
 
         case "com.hggdet.istore.telegram":
-
             return URL(
-                string:
-                    "https://t.me/ipafilesfor"
+                string: "https://t.me/ipafilesfor"
             )
-
 
         case "com.hggdet.istore.tiktok":
-
             return URL(
-                string:
-                    "https://www.tiktok.com/@087.n"
+                string: "https://www.tiktok.com/@087.n"
             )
 
-
         default:
-
             return nil
         }
     }
 }
-
 
 // MARK: - App
 
@@ -221,75 +177,59 @@ struct ForgeSignMobileApp: App {
     )
     private var appDelegate
 
-
     @AppStorage("app.language")
     private var languageCode =
         AppLanguage.arabic.rawValue
-
 
     @StateObject
     private var certificates =
         CertificateStore()
 
-
     @StateObject
     private var profiles =
         ProfileStore()
-
 
     @StateObject
     private var history =
         HistoryStore()
 
-
     @StateObject
     private var installer =
         InstallController()
-
 
     @StateObject
     private var repositories =
         RepositoryStore()
 
-
-    // ⭐ نظام NOVA VIP الجديد
+    // NOVA VIP Authentication
     @StateObject
     private var auth =
         NOVAAuthService.shared
 
-
     init() {
 
-        let defaults =
-            UserDefaults.standard
-
+        let defaults = UserDefaults.standard
 
         if defaults.object(
-            forKey:
-                "app.language.userSelected"
+            forKey: "app.language.userSelected"
         ) == nil {
 
             defaults.set(
                 AppLanguage.arabic.rawValue,
-                forKey:
-                    "app.language"
+                forKey: "app.language"
             )
         }
 
-
         UITabBar.appearance().isHidden = true
     }
-
 
     var body: some Scene {
 
         let language =
             AppLanguage(
-                rawValue:
-                    languageCode
+                rawValue: languageCode
             )
             ?? .english
-
 
         WindowGroup {
 
@@ -330,7 +270,8 @@ struct ForgeSignMobileApp: App {
                     repositories
                 )
 
-                // ⭐ مهم جداً
+                // مهم جدًا:
+                // يمرر NOVAAuthService إلى شاشات تسجيل الدخول والمتجر
                 .environmentObject(
                     auth
                 )
@@ -338,18 +279,9 @@ struct ForgeSignMobileApp: App {
     }
 }
 
-
-// MARK: - VIP State
-
-private enum VIPValidationState {
-
-    case validating
-    case authorized
-}
-
-
 // MARK: - Root
 
+@MainActor
 private struct ForgeRootView: View {
 
     @Environment(
@@ -357,26 +289,17 @@ private struct ForgeRootView: View {
     )
     private var colorScheme
 
-
     @Environment(
         \.scenePhase
     )
     private var scenePhase
 
-
     @EnvironmentObject
     private var auth:
         NOVAAuthService
 
-
     @State
     private var tab = 0
-
-
-    @State
-    private var validationState:
-        VIPValidationState = .validating
-
 
     private var theme:
         ForgeTheme {
@@ -386,46 +309,13 @@ private struct ForgeRootView: View {
             : .light
     }
 
-
     var body: some View {
 
         Group {
 
             if auth.isLoggedIn {
 
-                if validationState ==
-                    .validating {
-
-                    NOVAVIPValidationView {
-
-                        withAnimation(
-                            .easeOut(
-                                duration:
-                                    0.3
-                            )
-                        ) {
-
-                            validationState =
-                                .authorized
-                        }
-
-                    } onFail: {
-
-                        withAnimation(
-                            .easeIn
-                        ) {
-
-                            auth.logout()
-
-                            validationState =
-                                .validating
-                        }
-                    }
-
-                } else {
-
-                    storeInterface
-                }
+                storeInterface
 
             } else {
 
@@ -437,124 +327,69 @@ private struct ForgeRootView: View {
 
         .forgeScaledType()
 
+        // التحقق من الجلسة عند تشغيل التطبيق
         .task {
+
+            await auth.validateSession()
+        }
+
+        // إعادة التحقق عند رجوع التطبيق للواجهة
+        .onChange(
+            of: scenePhase
+        ) { _, newPhase in
+
+            guard newPhase == .active else {
+                return
+            }
 
             guard auth.isLoggedIn else {
                 return
             }
 
-            await auth.validateSession()
-
-            if auth.isLoggedIn {
-
-                validationState =
-                    .authorized
-
-            } else {
-
-                validationState =
-                    .validating
-            }
-        }
-
-        .onChange(
-            of: scenePhase
-        ) { newPhase in
-
-            guard
-                newPhase == .active
-            else {
-                return
-            }
-
-
-            if auth.isLoggedIn {
-
-                validationState =
-                    .validating
-
-                Task {
-
-                    await auth.validateSession()
-
-                    if auth.isLoggedIn {
-
-                        await MainActor.run {
-
-                            validationState =
-                                .authorized
-                        }
-                    }
-                }
-            }
-        }
-
-        .onChange(
-            of: auth.isLoggedIn
-        ) { loggedIn in
-
-            if loggedIn {
-
-                validationState =
-                    .validating
-
-            } else {
-
-                validationState =
-                    .validating
+            Task { @MainActor in
+                await auth.validateSession()
             }
         }
     }
 
-
-    // MARK: Store
+    // MARK: - Store
 
     private var storeInterface:
         some View {
 
         ZStack(
-            alignment:
-                .bottom
+            alignment: .bottom
         ) {
 
             TabView(
-                selection:
-                    $tab
+                selection: $tab
             ) {
 
                 NOVAHomeView()
                     .tag(0)
 
-
                 NOVAAppsView()
                     .tag(1)
 
-
                 ContentView()
                     .tag(2)
-
 
                 AboutView()
                     .tag(3)
             }
 
-
             CustomFloatingTabBar(
-                selectedTab:
-                    $tab,
-                theme:
-                    theme
+                selectedTab: $tab,
+                theme: theme
             )
         }
 
         .ignoresSafeArea(
             .keyboard,
-            edges:
-                .bottom
+            edges: .bottom
         )
     }
 }
-
 
 // MARK: - Floating Tab Bar
 
@@ -565,10 +400,8 @@ private struct CustomFloatingTabBar:
     var selectedTab:
         Int
 
-
     let theme:
         ForgeTheme
-
 
     var body:
         some View {
@@ -579,53 +412,34 @@ private struct CustomFloatingTabBar:
 
             TabBarButton(
                 id: 0,
-                title:
-                    "الرئيسية",
-                icon:
-                    "house.fill",
-                selectedTab:
-                    $selectedTab,
-                theme:
-                    theme
+                title: "الرئيسية",
+                icon: "house.fill",
+                selectedTab: $selectedTab,
+                theme: theme
             )
-
 
             TabBarButton(
                 id: 1,
-                title:
-                    "التطبيقات",
-                icon:
-                    "square.grid.2x2.fill",
-                selectedTab:
-                    $selectedTab,
-                theme:
-                    theme
+                title: "التطبيقات",
+                icon: "square.grid.2x2.fill",
+                selectedTab: $selectedTab,
+                theme: theme
             )
-
 
             TabBarButton(
                 id: 2,
-                title:
-                    "التوقيع",
-                icon:
-                    "signature",
-                selectedTab:
-                    $selectedTab,
-                theme:
-                    theme
+                title: "التوقيع",
+                icon: "signature",
+                selectedTab: $selectedTab,
+                theme: theme
             )
-
 
             TabBarButton(
                 id: 3,
-                title:
-                    "الإعدادات",
-                icon:
-                    "gearshape.fill",
-                selectedTab:
-                    $selectedTab,
-                theme:
-                    theme
+                title: "الإعدادات",
+                icon: "gearshape.fill",
+                selectedTab: $selectedTab,
+                theme: theme
             )
         }
 
@@ -660,22 +474,16 @@ private struct CustomFloatingTabBar:
                     .opacity(0.9)
                 ],
 
-                startPoint:
-                    .top,
-
-                endPoint:
-                    .bottom
+                startPoint: .top,
+                endPoint: .bottom
             )
 
             .ignoresSafeArea()
 
-            .allowsHitTesting(
-                false
-            )
+            .allowsHitTesting(false)
         )
     }
 }
-
 
 // MARK: - Tab Button
 
@@ -691,20 +499,16 @@ private struct TabBarButton:
     let icon:
         String
 
-
     @Binding
     var selectedTab:
         Int
 
-
     let theme:
         ForgeTheme
-
 
     @State
     private var isAnimating =
         false
-
 
     private var isSelected:
         Bool {
@@ -712,30 +516,24 @@ private struct TabBarButton:
         selectedTab == id
     }
 
-
     var body:
         some View {
 
         Button {
 
             UIImpactFeedbackGenerator(
-                style:
-                    .light
+                style: .light
             )
             .impactOccurred()
 
-
-            selectedTab =
-                id
-
+            selectedTab = id
 
             triggerAnimation()
 
         } label: {
 
             VStack(
-                spacing:
-                    5
+                spacing: 5
             ) {
 
                 ZStack {
@@ -745,31 +543,23 @@ private struct TabBarButton:
                         .fill(
                             isSelected
                                 ? theme.accent
-                                    .opacity(
-                                        0.15
-                                    )
+                                    .opacity(0.15)
                                 : .clear
                         )
 
                         .frame(
-                            width:
-                                48,
-                            height:
-                                48
+                            width: 48,
+                            height: 48
                         )
 
-
                     Image(
-                        systemName:
-                            icon
+                        systemName: icon
                     )
 
                     .font(
                         .system(
-                            size:
-                                20,
-                            weight:
-                                .semibold
+                            size: 20,
+                            weight: .semibold
                         )
                     )
 
@@ -777,16 +567,13 @@ private struct TabBarButton:
                         isSelected
                             ? theme.accent
                             : Color.gray
-                                .opacity(
-                                    0.6
-                                )
+                                .opacity(0.6)
                     )
 
                     .offset(
-                        y:
-                            isAnimating
-                                ? -12
-                                : 0
+                        y: isAnimating
+                            ? -12
+                            : 0
                     )
 
                     .rotationEffect(
@@ -798,13 +585,11 @@ private struct TabBarButton:
                     )
                 }
 
-
                 Text(title)
 
                     .font(
                         .system(
-                            size:
-                                11,
+                            size: 11,
                             weight:
                                 isSelected
                                     ? .bold
@@ -816,15 +601,12 @@ private struct TabBarButton:
                         isSelected
                             ? theme.accent
                             : Color.gray
-                                .opacity(
-                                    0.6
-                                )
+                                .opacity(0.6)
                     )
             }
 
             .frame(
-                maxWidth:
-                    .infinity
+                maxWidth: .infinity
             )
 
             .contentShape(
@@ -837,43 +619,32 @@ private struct TabBarButton:
         )
     }
 
-
     private func triggerAnimation() {
 
         withAnimation(
             .spring(
-                response:
-                    0.3,
-                dampingFraction:
-                    0.5,
-                blendDuration:
-                    0.5
+                response: 0.3,
+                dampingFraction: 0.5,
+                blendDuration: 0.5
             )
         ) {
 
-            isAnimating =
-                true
+            isAnimating = true
         }
 
-
         DispatchQueue.main.asyncAfter(
-            deadline:
-                .now() + 0.2
+            deadline: .now() + 0.2
         ) {
 
             withAnimation(
                 .spring(
-                    response:
-                        0.3,
-                    dampingFraction:
-                        0.5,
-                    blendDuration:
-                        0.5
+                    response: 0.3,
+                    dampingFraction: 0.5,
+                    blendDuration: 0.5
                 )
             ) {
 
-                isAnimating =
-                    false
+                isAnimating = false
             }
         }
     }
