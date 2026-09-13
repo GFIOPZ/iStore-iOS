@@ -1,212 +1,569 @@
 import SwiftUI
-import AudioToolbox
+import UIKit
 
-// الموديلات الخاصة بالرد من السيرفر
-struct NOVAVIPAccount: Codable {
-    let username: String
-    let cert_password: String?
-    let p12_base64: String?
-    let prov_base64: String?
-}
-
-struct APILoginResponse: Codable {
-    let success: Bool?
-    let error: String?
-    let account: NOVAVIPAccount?
-}
-
-// MARK: - VIP Login View
 struct NOVAVIPLoginView: View {
-    @AppStorage("isVIPLoggedIn") private var isVIPLoggedIn = false
-    @AppStorage("vip_username") private var vipUsername = ""
-    @AppStorage("vip_password") private var vipPassword = ""
-    @AppStorage("vip_code") private var vipCode = ""
-    
-    @EnvironmentObject private var certStore: CertificateStore
-    @EnvironmentObject private var profileStore: ProfileStore
-    
+    @EnvironmentObject private var auth: NOVAAuthService
+
     @State private var username = ""
     @State private var password = ""
-    @State private var code = ""
-    
-    @State private var isLoading = false
-    @State private var errorMessage = ""
-    @State private var showError = false
+    @State private var activationCode = ""
 
-    private let gradientStart = Color(hex: "7C3AED")
-    private let gradientEnd = Color(hex: "A855F7")
+    @State private var focusedField: Field?
+    @State private var appeared = false
+    @State private var isLoggingIn = false
+    @State private var showPassword = false
+
+    enum Field {
+        case username
+        case password
+        case code
+    }
 
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground).ignoresSafeArea()
-            
-            VStack(spacing: 30) {
-                Spacer()
-                
-                VStack(spacing: 8) {
-                    Image(systemName: "crown.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(
-                            LinearGradient(colors: [Color(hex: "FFD700"), Color(hex: "FFA500")],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .shadow(color: Color(hex: "FFD700").opacity(0.4), radius: 10, x: 0, y: 5)
-                    
-                    Text("NOVA VIP")
-                        .font(.system(size: 32, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(colors: [gradientStart, gradientEnd],
-                                           startPoint: .leading, endPoint: .trailing)
-                        )
-                    
-                    Text("الرجاء إدخال بيانات المطالبة للوصول للمتجر")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.bottom, 20)
-                
-                VStack(spacing: 16) {
-                    CustomTextField(icon: "person.fill", placeholder: "اسم المستخدم", text: $username)
-                    CustomTextField(icon: "lock.fill", placeholder: "كلمة السر", text: $password, isSecure: true)
-                    CustomTextField(icon: "key.fill", placeholder: "كود التفعيل", text: $code)
-                }
-                .padding(.horizontal, 24)
-                
-                Button(action: verifyVIP) {
-                    HStack {
-                        if isLoading {
-                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text("تسجيل الدخول").font(.headline.weight(.bold))
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 55)
-                    .background(
-                        LinearGradient(colors: [gradientStart, gradientEnd],
-                                       startPoint: .leading, endPoint: .trailing)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: gradientStart.opacity(0.3), radius: 10, x: 0, y: 5)
-                }
-                .disabled(isLoading || username.isEmpty || password.isEmpty || code.isEmpty)
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-                
-                Spacer()
-                Spacer()
-            }
-        }
-        .alert("إشعار", isPresented: $showError) {
-            Button("حسناً", role: .cancel) { }
-        } message: {
-            Text(errorMessage)
-        }
-    }
-    
-    // MARK: - Verification Logic (True API Mode)
-    private func verifyVIP() {
-        isLoading = true
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
-        // الاتصال بسيرفرك الجديد
-        guard let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
-        
-        // إرسال البيانات
-        let bodyData: [String: String] = [
-            "username": username.trimmingCharacters(in: .whitespacesAndNewlines),
-            "password": password.trimmingCharacters(in: .whitespacesAndNewlines),
-            "code": code.trimmingCharacters(in: .whitespacesAndNewlines)
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: bodyData)
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                guard let data = data, error == nil else {
-                    showError(msg: "تعذر الاتصال بالسيرفر. تأكد من اتصال الإنترنت.")
-                    return
-                }
-                
-                do {
-                    let result = try JSONDecoder().decode(APILoginResponse.self, from: data)
-                    
-                    if result.success == true, let account = result.account {
-                        // نجاح الدخول
-                        AudioServicesPlaySystemSound(1407)
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                        
-                        // استيراد الشهادة
-                        if let p12 = account.p12_base64, !p12.isEmpty,
-                           let prov = account.prov_base64, !prov.isEmpty {
-                            autoImportCertificates(p12Base64: p12, provBase64: prov, password: account.cert_password ?? "")
-                        }
-                        
-                        // حفظ البيانات للتحقق بالخلفية
-                        vipUsername = username
-                        vipPassword = password
-                        vipCode = code
-                        
-                        withAnimation(.easeInOut) {
-                            isVIPLoggedIn = true
-                        }
-                    } else {
-                        showError(msg: result.error ?? "معلومات غير صحيحة.")
-                    }
-                } catch {
-                    showError(msg: "خطأ في قراءة بيانات السيرفر.")
-                }
-            }
-        }.resume()
-    }
-    
-    private func autoImportCertificates(p12Base64: String, provBase64: String, password: String) {
-        guard let p12Data = Data(base64Encoded: p12Base64, options: .ignoreUnknownCharacters),
-              let provData = Data(base64Encoded: provBase64, options: .ignoreUnknownCharacters) else { return }
-        
-        let tempDir = FileManager.default.temporaryDirectory
-        let p12URL = tempDir.appendingPathComponent("nova_vip_cert.p12")
-        let provURL = tempDir.appendingPathComponent("nova_vip_profile.mobileprovision")
-        
-        do {
-            try p12Data.write(to: p12URL)
-            try provData.write(to: provURL)
-            
-            _ = profileStore.importProfile(from: provURL)
-            _ = certStore.importCertificate(from: p12URL, password: password, rememberPassword: true)
-            
-            try? FileManager.default.removeItem(at: p12URL)
-            try? FileManager.default.removeItem(at: provURL)
-        } catch { }
-    }
-    
-    private func showError(msg: String) {
-        errorMessage = msg
-        showError = true
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-}
+            premiumBackground
 
-private struct CustomTextField: View {
-    let icon: String
-    let placeholder: String
-    @Binding var text: String
-    var isSecure: Bool = false
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 24)
-            if isSecure { SecureField(placeholder, text: $text).autocorrectionDisabled().textInputAutocapitalization(.never) }
-            else { TextField(placeholder, text: $text).autocorrectionDisabled().textInputAutocapitalization(.never) }
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+
+                    Spacer(minLength: 55)
+
+                    header
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 25)
+
+                    Spacer(minLength: 34)
+
+                    loginCard
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 35)
+
+                    Spacer(minLength: 28)
+
+                    footer
+                        .opacity(appeared ? 1 : 0)
+
+                    Spacer(minLength: 30)
+                }
+                .padding(.horizontal, 20)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+            }
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.gray.opacity(0.15), lineWidth: 1))
+        .preferredColorScheme(.dark)
+        .onAppear {
+            withAnimation(
+                .spring(
+                    response: 0.7,
+                    dampingFraction: 0.82
+                )
+            ) {
+                appeared = true
+            }
+        }
+        .alert(
+            "تعذر تسجيل الدخول",
+            isPresented: Binding(
+                get: { auth.errorMessage != nil },
+                set: { if !$0 { auth.errorMessage = nil } }
+            )
+        ) {
+            Button("حسناً", role: .cancel) {
+                auth.errorMessage = nil
+            }
+        } message: {
+            Text(auth.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Background
+
+    private var premiumBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(hex: "07050D"),
+                    Color(hex: "0D0819"),
+                    Color(hex: "120B24"),
+                    Color(hex: "07050D")
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Color(hex: "7C3AED").opacity(0.18))
+                .frame(width: 330, height: 330)
+                .blur(radius: 90)
+                .offset(x: -150, y: -300)
+
+            Circle()
+                .fill(Color(hex: "A855F7").opacity(0.13))
+                .frame(width: 280, height: 280)
+                .blur(radius: 85)
+                .offset(x: 170, y: 250)
+
+            Circle()
+                .stroke(
+                    Color.white.opacity(0.035),
+                    lineWidth: 1
+                )
+                .frame(width: 420, height: 420)
+                .offset(x: 160, y: -250)
+
+            Circle()
+                .stroke(
+                    Color.white.opacity(0.025),
+                    lineWidth: 1
+                )
+                .frame(width: 600, height: 600)
+                .offset(x: -180, y: 300)
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(spacing: 18) {
+
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "A855F7").opacity(0.25),
+                                Color(hex: "7C3AED").opacity(0.05)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 108, height: 108)
+                    .blur(radius: 1)
+
+                Circle()
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.18),
+                                Color.white.opacity(0.03)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                    .frame(width: 108, height: 108)
+
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "F5D77A"),
+                                Color(hex: "C9962E")
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(
+                        color: Color(hex: "F5D77A").opacity(0.3),
+                        radius: 18
+                    )
+            }
+
+            VStack(spacing: 7) {
+                Text("NOVA")
+                    .font(
+                        .system(
+                            size: 34,
+                            weight: .black,
+                            design: .rounded
+                        )
+                    )
+                    .tracking(1.8)
+                    .foregroundStyle(.white)
+
+                Text("VIP")
+                    .font(
+                        .system(
+                            size: 18,
+                            weight: .bold,
+                            design: .rounded
+                        )
+                    )
+                    .tracking(5)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "C084FC"),
+                                Color(hex: "8B5CF6")
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            }
+
+            Text("دخول آمن إلى تجربة NOVA STORE")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.52))
+        }
+    }
+
+    // MARK: - Card
+
+    private var loginCard: some View {
+        VStack(spacing: 22) {
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("تسجيل الدخول")
+                    .font(.system(size: 23, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text("أدخل بيانات اشتراكك للمتابعة")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.42))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 12) {
+
+                premiumField(
+                    icon: "person",
+                    title: "اسم المستخدم",
+                    placeholder: "أدخل اسم المستخدم",
+                    text: $username,
+                    field: .username
+                )
+
+                passwordField
+
+                premiumField(
+                    icon: "key",
+                    title: "كود التفعيل",
+                    placeholder: "XXXX-XXXX-XXXX",
+                    text: $activationCode,
+                    field: .code
+                )
+            }
+
+            if let error = auth.errorMessage, !error.isEmpty {
+                errorBanner(error)
+            }
+
+            loginButton
+        }
+        .padding(22)
+        .background(
+            RoundedRectangle(
+                cornerRadius: 28,
+                style: .continuous
+            )
+            .fill(Color.white.opacity(0.055))
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 28,
+                style: .continuous
+            )
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.16),
+                        Color.white.opacity(0.035)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        )
+        .shadow(
+            color: .black.opacity(0.35),
+            radius: 35,
+            x: 0,
+            y: 20
+        )
+    }
+
+    // MARK: - Password
+
+    private var passwordField: some View {
+        HStack(spacing: 13) {
+
+            Image(systemName: "lock")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(
+                    focusedField == .password
+                    ? Color(hex: "A855F7")
+                    : Color.white.opacity(0.42)
+                )
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("كلمة المرور")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.38))
+
+                Group {
+                    if showPassword {
+                        TextField("أدخل كلمة المرور", text: $password)
+                    } else {
+                        SecureField("أدخل كلمة المرور", text: $password)
+                    }
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused(
+                    Binding(
+                        get: { focusedField == .password },
+                        set: { focusedField = $0 ? .password : nil }
+                    )
+                )
+            }
+
+            Button {
+                showPassword.toggle()
+            } label: {
+                Image(
+                    systemName: showPassword
+                    ? "eye.slash"
+                    : "eye"
+                )
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.38))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 67)
+        .background(fieldBackground(.password))
+    }
+
+    // MARK: - Field
+
+    private func premiumField(
+        icon: String,
+        title: String,
+        placeholder: String,
+        text: Binding<String>,
+        field: Field
+    ) -> some View {
+
+        HStack(spacing: 13) {
+
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(
+                    focusedField == field
+                    ? Color(hex: "A855F7")
+                    : Color.white.opacity(0.42)
+                )
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.38))
+
+                TextField(placeholder, text: text)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused(
+                        Binding(
+                            get: { focusedField == field },
+                            set: {
+                                focusedField = $0 ? field : nil
+                            }
+                        )
+                    )
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 67)
+        .background(fieldBackground(field))
+    }
+
+    private func fieldBackground(_ field: Field) -> some View {
+        RoundedRectangle(
+            cornerRadius: 18,
+            style: .continuous
+        )
+        .fill(Color.black.opacity(0.20))
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 18,
+                style: .continuous
+            )
+            .stroke(
+                focusedField == field
+                ? Color(hex: "A855F7").opacity(0.65)
+                : Color.white.opacity(0.075),
+                lineWidth: focusedField == field ? 1.2 : 1
+            )
+        )
+    }
+
+    // MARK: - Login Button
+
+    private var loginButton: some View {
+        Button {
+            login()
+        } label: {
+            ZStack {
+
+                RoundedRectangle(
+                    cornerRadius: 18,
+                    style: .continuous
+                )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(hex: "7C3AED"),
+                            Color(hex: "A855F7")
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+
+                RoundedRectangle(
+                    cornerRadius: 18,
+                    style: .continuous
+                )
+                .stroke(
+                    Color.white.opacity(0.18),
+                    lineWidth: 1
+                )
+
+                if isLoggingIn {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.9)
+                } else {
+                    HStack(spacing: 10) {
+                        Text("متابعة")
+                            .font(.system(size: 16, weight: .bold))
+
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+            .frame(height: 58)
+            .shadow(
+                color: Color(hex: "8B5CF6").opacity(0.32),
+                radius: 20,
+                x: 0,
+                y: 10
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(
+            isLoggingIn ||
+            username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            password.isEmpty ||
+            activationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
+        .opacity(
+            username.isEmpty ||
+            password.isEmpty ||
+            activationCode.isEmpty
+            ? 0.55
+            : 1
+        )
+    }
+
+    // MARK: - Error
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(Color.orange)
+
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.75))
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .padding(13)
+        .background(
+            RoundedRectangle(
+                cornerRadius: 14,
+                style: .continuous
+            )
+            .fill(Color.orange.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 14,
+                style: .continuous
+            )
+            .stroke(
+                Color.orange.opacity(0.16),
+                lineWidth: 1
+            )
+        )
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 11))
+
+            Text("اتصال محمي • NOVA STORE VIP")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(Color.white.opacity(0.28))
+    }
+
+    // MARK: - Login
+
+    private func login() {
+        guard !isLoggingIn else { return }
+
+        isLoggingIn = true
+        focusedField = nil
+
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred()
+
+        Task {
+            do {
+                try await auth.login(
+                    username: username.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ),
+                    password: password,
+                    code: activationCode.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                )
+
+                await MainActor.run {
+                    UINotificationFeedbackGenerator()
+                        .notificationOccurred(.success)
+
+                    isLoggingIn = false
+                }
+            } catch {
+                await MainActor.run {
+                    isLoggingIn = false
+                }
+            }
+        }
     }
 }
