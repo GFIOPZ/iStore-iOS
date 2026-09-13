@@ -176,7 +176,7 @@ private struct ForgeRootView: View {
                 }
                 .tint(theme.accent)
                 .onChange(of: scenePhase) { newPhase in
-                    // عند فتح التطبيق، يتم فحص الحساب بالخلفية
+                    // فحص عند عودة التطبيق للواجهة
                     if newPhase == .active {
                         silentVIPCheck()
                     }
@@ -189,7 +189,7 @@ private struct ForgeRootView: View {
         .forgeScaledType()
     }
     
-    // MARK: - Silent VIP Background Check
+    // MARK: - Silent VIP Background Check (الطرد الفوري اللحظي)
     private func silentVIPCheck() {
         guard !vipUsername.isEmpty, let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else { return }
         
@@ -197,6 +197,9 @@ private struct ForgeRootView: View {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
+        
+        // إجبار التطبيق على جلب البيانات الحقيقية الآن وتجاهل أي كاش سابق
+        request.cachePolicy = .reloadIgnoringLocalCacheData 
         
         let bodyData: [String: String] = [
             "username": vipUsername,
@@ -206,17 +209,26 @@ private struct ForgeRootView: View {
         request.httpBody = try? JSONSerialization.data(withJSONObject: bodyData)
         
         URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else { return }
+            guard error == nil, let httpResponse = response as? HTTPURLResponse else { return }
             
-            if let result = try? JSONDecoder().decode(APILoginResponse.self, from: data) {
-                // إذا رفض السيرفر الدخول (الحساب معطل أو منتهي الصلاحية)
-                if result.success != true {
-                    DispatchQueue.main.async {
-                        // إبطال حالة تسجيل الدخول وطرد المستخدم
-                        isVIPLoggedIn = false
-                        vipUsername = ""
-                        vipPassword = ""
-                        vipCode = ""
+            // إذا رجع السيرفر أي كود خطأ (401 مرفوض، 403 محظور، أو غيره) = طرد فوري!
+            if httpResponse.statusCode != 200 {
+                DispatchQueue.main.async {
+                    isVIPLoggedIn = false
+                    vipUsername = ""
+                    vipPassword = ""
+                    vipCode = ""
+                }
+            } else if let data = data {
+                // فحص احتياطي للبيانات
+                if let result = try? JSONDecoder().decode(APILoginResponse.self, from: data) {
+                    if result.success != true {
+                        DispatchQueue.main.async {
+                            isVIPLoggedIn = false
+                            vipUsername = ""
+                            vipPassword = ""
+                            vipCode = ""
+                        }
                     }
                 }
             }
