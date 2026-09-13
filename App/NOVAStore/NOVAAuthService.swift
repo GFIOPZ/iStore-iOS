@@ -26,10 +26,12 @@ final class NOVAAuthService: ObservableObject {
     // MARK: - Device ID
 
     private var deviceID: String {
+
         let key = "nova.device.id"
 
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
+        if let saved =
+            UserDefaults.standard.string(forKey: key) {
+            return saved
         }
 
         let id =
@@ -41,16 +43,22 @@ final class NOVAAuthService: ObservableObject {
         return id
     }
 
-    // MARK: - Session
+    // MARK: - Load Session
 
     private func loadSession() {
+
         guard
-            let value = NOVAKeychain.load(account: sessionKey),
-            let data = value.data(using: .utf8),
-            let decoded = try? JSONDecoder().decode(
-                NOVAUserSession.self,
-                from: data
-            )
+            let saved =
+                NOVAKeychain.load(
+                    account: sessionKey
+                ),
+            let data =
+                saved.data(using: .utf8),
+            let decoded =
+                try? JSONDecoder().decode(
+                    NOVAUserSession.self,
+                    from: data
+                )
         else {
             return
         }
@@ -58,10 +66,22 @@ final class NOVAAuthService: ObservableObject {
         session = decoded
     }
 
-    private func saveSession(_ session: NOVAUserSession) {
+    // MARK: - Save Session
+
+    private func saveSession(
+        _ newSession: NOVAUserSession
+    ) {
+
         guard
-            let data = try? JSONEncoder().encode(session),
-            let value = String(data: data, encoding: .utf8)
+            let data =
+                try? JSONEncoder().encode(
+                    newSession
+                ),
+            let value =
+                String(
+                    data: data,
+                    encoding: .utf8
+                )
         else {
             return
         }
@@ -71,7 +91,7 @@ final class NOVAAuthService: ObservableObject {
             account: sessionKey
         )
 
-        self.session = session
+        session = newSession
     }
 
     // MARK: - Login
@@ -83,42 +103,48 @@ final class NOVAAuthService: ObservableObject {
     ) async throws {
 
         guard
-            let url = URL(
-                string:
-                    "\(NOVAConfig.apiBaseURL)/v1/auth/login"
-            )
+            let url =
+                URL(
+                    string:
+                        "\(NOVAConfig.apiBaseURL)/v1/auth/login"
+                )
         else {
             throw NOVAAuthError.invalidURL
         }
 
-        let requestBody = NOVALoginRequest(
-            username: username.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ),
-            password: password,
-            code: code.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ),
-            deviceID: deviceID
-        )
+        let body =
+            NOVALoginRequest(
+                username:
+                    username.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ),
+                password: password,
+                code:
+                    code.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ),
+                deviceID: deviceID
+            )
 
-        var request = URLRequest(url: url)
+        var request =
+            URLRequest(url: url)
 
         request.httpMethod = "POST"
 
         request.setValue(
             "application/json",
-            forHTTPHeaderField: "Content-Type"
+            forHTTPHeaderField:
+                "Content-Type"
         )
 
         request.setValue(
             "application/json",
-            forHTTPHeaderField: "Accept"
+            forHTTPHeaderField:
+                "Accept"
         )
 
-        request.httpBody = try JSONEncoder().encode(
-            requestBody
-        )
+        request.httpBody =
+            try JSONEncoder().encode(body)
 
         let (data, response) =
             try await URLSession.shared.data(
@@ -126,30 +152,34 @@ final class NOVAAuthService: ObservableObject {
             )
 
         guard
-            let http = response as? HTTPURLResponse
+            let http =
+                response as? HTTPURLResponse
         else {
             throw NOVAAuthError.invalidResponse
         }
 
-        let decoded =
+        let result =
             try? JSONDecoder().decode(
                 NOVALoginResponse.self,
                 from: data
             )
 
         guard
-            (200..<300).contains(http.statusCode),
-            decoded?.ok == true,
-            let session = decoded?.session
+            (200..<300).contains(
+                http.statusCode
+            ),
+            result?.ok == true,
+            let newSession =
+                result?.session
         else {
-            let message =
-                decoded?.message
-                ?? "بيانات الدخول غير صحيحة."
 
-            throw NOVAAuthError.server(message)
+            throw NOVAAuthError.server(
+                result?.message
+                ?? "بيانات الدخول غير صحيحة."
+            )
         }
 
-        saveSession(session)
+        saveSession(newSession)
     }
 
     // MARK: - Validate Session
@@ -161,54 +191,65 @@ final class NOVAAuthService: ObservableObject {
         }
 
         guard
-            let url = URL(
-                string:
-                    "\(NOVAConfig.apiBaseURL)/v1/session"
-            )
+            let url =
+                URL(
+                    string:
+                        "\(NOVAConfig.apiBaseURL)/v1/session"
+                )
         else {
             return
         }
 
-        var request = URLRequest(url: url)
+        var request =
+            URLRequest(url: url)
 
         request.httpMethod = "GET"
 
         request.setValue(
             "Bearer \(token)",
-            forHTTPHeaderField: "Authorization"
+            forHTTPHeaderField:
+                "Authorization"
         )
 
         request.setValue(
             "application/json",
-            forHTTPHeaderField: "Accept"
+            forHTTPHeaderField:
+                "Accept"
         )
 
         do {
+
             let (data, response) =
                 try await URLSession.shared.data(
                     for: request
                 )
 
             guard
-                let http = response as? HTTPURLResponse
+                let http =
+                    response as? HTTPURLResponse
             else {
                 return
             }
 
-            if http.statusCode == 401 ||
-                http.statusCode == 403 {
-
+            if
+                http.statusCode == 401 ||
+                http.statusCode == 403
+            {
                 logout()
                 return
             }
 
             guard
-                (200..<300).contains(http.statusCode),
-                let object = try? JSONDecoder().decode(
-                    NOVALoginResponse.self,
-                    from: data
+                (200..<300).contains(
+                    http.statusCode
                 ),
-                let newSession = object.session
+                let result =
+                    try? JSONDecoder().decode(
+                        NOVALoginResponse.self,
+                        from: data
+                    ),
+                let newSession =
+                    result.session
             else {
                 return
             }
@@ -216,39 +257,46 @@ final class NOVAAuthService: ObservableObject {
             saveSession(newSession)
 
         } catch {
-            // إذا الإنترنت فصل مؤقتاً نخلي الجلسة المحلية.
+            // لا نمسح الجلسة بسبب انقطاع الإنترنت المؤقت.
         }
     }
 
     // MARK: - Certificate
 
-    func fetchCertificate() async throws -> NOVACertificatePackage {
+    func fetchCertificate()
+        async throws
+        -> NOVACertificatePackage
+    {
 
         guard let token else {
             throw NOVAAuthError.notLoggedIn
         }
 
         guard
-            let url = URL(
-                string:
-                    "\(NOVAConfig.apiBaseURL)/v1/certificate"
-            )
+            let url =
+                URL(
+                    string:
+                        "\(NOVAConfig.apiBaseURL)/v1/certificate"
+                )
         else {
             throw NOVAAuthError.invalidURL
         }
 
-        var request = URLRequest(url: url)
+        var request =
+            URLRequest(url: url)
 
         request.httpMethod = "GET"
 
         request.setValue(
             "Bearer \(token)",
-            forHTTPHeaderField: "Authorization"
+            forHTTPHeaderField:
+                "Authorization"
         )
 
         request.setValue(
             "application/json",
-            forHTTPHeaderField: "Accept"
+            forHTTPHeaderField:
+                "Accept"
         )
 
         let (data, response) =
@@ -257,21 +305,25 @@ final class NOVAAuthService: ObservableObject {
             )
 
         guard
-            let http = response as? HTTPURLResponse
+            let http =
+                response as? HTTPURLResponse
         else {
             throw NOVAAuthError.invalidResponse
         }
 
-        if http.statusCode == 401 ||
-            http.statusCode == 403 {
-
+        if
+            http.statusCode == 401 ||
+            http.statusCode == 403
+        {
             logout()
 
             throw NOVAAuthError.notLoggedIn
         }
 
         guard
-            (200..<300).contains(http.statusCode)
+            (200..<300).contains(
+                http.statusCode
+            )
         else {
             throw NOVAAuthError.server(
                 "تعذر تحميل الشهادة."
@@ -336,5 +388,7 @@ enum NOVAAuthError: LocalizedError {
 extension Notification.Name {
 
     static let novaDidLogout =
-        Notification.Name("novaDidLogout")
+        Notification.Name(
+            "novaDidLogout"
+        )
 }
