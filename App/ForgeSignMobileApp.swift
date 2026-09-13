@@ -275,7 +275,6 @@ struct ForgeSignMobileApp: App {
                     repositories
                 )
 
-                // تمرير نظام تسجيل الدخول إلى كامل التطبيق
                 .environmentObject(
                     auth
                 )
@@ -301,6 +300,15 @@ private struct ForgeRootView: View {
     @EnvironmentObject
     private var auth:
         NOVAAuthService
+
+    // شهادات وبروفايلات المستخدم
+    @EnvironmentObject
+    private var certificates:
+        CertificateStore
+
+    @EnvironmentObject
+    private var profiles:
+        ProfileStore
 
     @State
     private var tab = 0
@@ -332,14 +340,25 @@ private struct ForgeRootView: View {
 
         .forgeScaledType()
 
-        // التحقق من الجلسة عند تشغيل التطبيق
+        // MARK: Initial Authentication + Certificate Sync
+
         .task {
 
             await auth.validateSession()
+
+            guard auth.isLoggedIn else {
+                return
+            }
+
+            await NOVACertificateSyncService.shared.sync(
+                auth: auth,
+                certificates: certificates,
+                profiles: profiles
+            )
         }
 
-        // التحقق من الجلسة عند العودة للتطبيق
-        // هذه الصيغة متوافقة مع iOS 16
+        // MARK: Resume Authentication + Certificate Sync
+
         .onChange(
             of: scenePhase
         ) { newPhase in
@@ -355,6 +374,16 @@ private struct ForgeRootView: View {
             Task { @MainActor in
 
                 await auth.validateSession()
+
+                guard auth.isLoggedIn else {
+                    return
+                }
+
+                await NOVACertificateSyncService.shared.sync(
+                    auth: auth,
+                    certificates: certificates,
+                    profiles: profiles
+                )
             }
         }
     }
