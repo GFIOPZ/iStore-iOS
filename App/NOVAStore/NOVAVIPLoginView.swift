@@ -18,6 +18,9 @@ struct APILoginResponse: Codable {
 // MARK: - VIP Login View
 struct NOVAVIPLoginView: View {
     @AppStorage("isVIPLoggedIn") private var isVIPLoggedIn = false
+    @AppStorage("vip_username") private var vipUsername = ""
+    @AppStorage("vip_password") private var vipPassword = ""
+    @AppStorage("vip_code") private var vipCode = ""
     
     @EnvironmentObject private var certStore: CertificateStore
     @EnvironmentObject private var profileStore: ProfileStore
@@ -107,13 +110,14 @@ struct NOVAVIPLoginView: View {
         isLoading = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        guard let url = URL(string: "https://nova-api.hassanyipa.workers.dev/") else { return }
+        // الاتصال بسيرفرك الجديد
+        guard let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret") // القفل السري
         
-        // إرسال البيانات بشكل مخفي للسيرفر
+        // إرسال البيانات
         let bodyData: [String: String] = [
             "username": username.trimmingCharacters(in: .whitespacesAndNewlines),
             "password": password.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -144,17 +148,19 @@ struct NOVAVIPLoginView: View {
                             autoImportCertificates(p12Base64: p12, provBase64: prov, password: account.cert_password ?? "")
                         }
                         
+                        // حفظ البيانات للتحقق بالخلفية
+                        vipUsername = username
+                        vipPassword = password
+                        vipCode = code
+                        
                         withAnimation(.easeInOut) {
                             isVIPLoggedIn = true
                         }
                     } else {
-                        // عرض الخطأ اللي يرسله السيرفر (منتهي، محظور، غلط)
                         showError(msg: result.error ?? "معلومات غير صحيحة.")
                     }
                 } catch {
-                    // إذا صار كراش راح يطبعلك الرد بالضبط حتى نعرف الخلل
-                    let rawString = String(data: data, encoding: .utf8) ?? "غير معروف"
-                    showError(msg: "خطأ في السيرفر:\n\(rawString)")
+                    showError(msg: "خطأ في قراءة بيانات السيرفر.")
                 }
             }
         }.resume()
