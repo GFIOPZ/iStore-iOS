@@ -152,16 +152,19 @@ final class ForgeApplicationDelegate: NSObject, UIApplicationDelegate {
         switch type {
 
         case "com.hggdet.istore.telegram":
+
             return URL(
                 string: "https://t.me/ipafilesfor"
             )
 
         case "com.hggdet.istore.tiktok":
+
             return URL(
                 string: "https://www.tiktok.com/@087.n"
             )
 
         default:
+
             return nil
         }
     }
@@ -201,14 +204,16 @@ struct ForgeSignMobileApp: App {
     private var repositories =
         RepositoryStore()
 
-    // NOVA VIP Authentication
+    // MARK: NOVA VIP Authentication
+
     @StateObject
     private var auth =
         NOVAAuthService.shared
 
     init() {
 
-        let defaults = UserDefaults.standard
+        let defaults =
+            UserDefaults.standard
 
         if defaults.object(
             forKey: "app.language.userSelected"
@@ -270,8 +275,7 @@ struct ForgeSignMobileApp: App {
                     repositories
                 )
 
-                // مهم جدًا:
-                // يمرر NOVAAuthService إلى شاشات تسجيل الدخول والمتجر
+                // تمرير نظام تسجيل الدخول إلى كامل التطبيق
                 .environmentObject(
                     auth
                 )
@@ -309,7 +313,8 @@ private struct ForgeRootView: View {
             : .light
     }
 
-    var body: some View {
+    var body:
+        some View {
 
         Group {
 
@@ -333,10 +338,11 @@ private struct ForgeRootView: View {
             await auth.validateSession()
         }
 
-        // إعادة التحقق عند رجوع التطبيق للواجهة
+        // التحقق من الجلسة عند العودة للتطبيق
+        // هذه الصيغة متوافقة مع iOS 16
         .onChange(
             of: scenePhase
-        ) { _, newPhase in
+        ) { newPhase in
 
             guard newPhase == .active else {
                 return
@@ -347,6 +353,7 @@ private struct ForgeRootView: View {
             }
 
             Task { @MainActor in
+
                 await auth.validateSession()
             }
         }
@@ -463,6 +470,7 @@ private struct CustomFloatingTabBar:
             LinearGradient(
                 colors: [
                     .clear,
+
                     Color(
                         .systemBackground
                     )
@@ -526,7 +534,8 @@ private struct TabBarButton:
             )
             .impactOccurred()
 
-            selectedTab = id
+            selectedTab =
+                id
 
             triggerAnimation()
 
@@ -571,9 +580,10 @@ private struct TabBarButton:
                     )
 
                     .offset(
-                        y: isAnimating
-                            ? -12
-                            : 0
+                        y:
+                            isAnimating
+                                ? -12
+                                : 0
                     )
 
                     .rotationEffect(
@@ -629,7 +639,8 @@ private struct TabBarButton:
             )
         ) {
 
-            isAnimating = true
+            isAnimating =
+                true
         }
 
         DispatchQueue.main.asyncAfter(
@@ -644,7 +655,8 @@ private struct TabBarButton:
                 )
             ) {
 
-                isAnimating = false
+                isAnimating =
+                    false
             }
         }
     }
