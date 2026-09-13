@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AudioToolbox
 
 private enum TabIconImage {
     static func make(symbol: String, selected: Bool) -> UIImage {
@@ -112,6 +113,9 @@ struct ForgeSignMobileApp: App {
         if defaults.object(forKey: "app.language.userSelected") == nil {
             defaults.set(AppLanguage.arabic.rawValue, forKey: "app.language")
         }
+        
+        // إخفاء الشريط الأبيض الافتراضي من جذور النظام
+        UITabBar.appearance().isHidden = true
     }
 
     var body: some Scene {
@@ -131,7 +135,6 @@ struct ForgeSignMobileApp: App {
     }
 }
 
-// حالة التحقق
 enum VIPValidationState {
     case validating
     case authorized
@@ -153,39 +156,37 @@ private struct ForgeRootView: View {
         Group {
             if isVIPLoggedIn {
                 if validationState == .validating {
-                    // شاشة التحقق الفخمة عند كل عملية فتح للتطبيق
                     NOVAVIPValidationView {
-                        // نجاح التحقق -> ادخل للمتجر
                         withAnimation(.easeOut(duration: 0.3)) {
                             validationState = .authorized
                         }
                     } onFail: {
-                        // فشل التحقق -> اطرد المستخدم لواجهة تسجيل الدخول
                         withAnimation(.easeIn) {
                             isVIPLoggedIn = false
-                            validationState = .validating // تصفير الحالة للمرات القادمة
+                            validationState = .validating
                         }
                     }
                 } else {
-                    // واجهة المتجر الرئيسية
-                    TabView(selection: $tab) {
-                        NOVAHomeView()
-                            .tabItem { Label("الرئيسية", systemImage: tab == 0 ? "house.fill" : "house") }
-                            .tag(0)
-
-                        NOVAAppsView()
-                            .tabItem { Label("التطبيقات", systemImage: tab == 1 ? "square.grid.2x2.fill" : "square.grid.2x2") }
-                            .tag(1)
-
-                        ContentView()
-                            .tabItem { Label("التوقيع", systemImage: tab == 2 ? "signature" : "signature") }
-                            .tag(2)
-
-                        AboutView()
-                            .tabItem { Label("الإعدادات", systemImage: tab == 3 ? "gearshape.fill" : "gearshape") }
-                            .tag(3)
+                    ZStack(alignment: .bottom) {
+                        // محتوى المتجر
+                        TabView(selection: $tab) {
+                            NOVAHomeView()
+                                .tag(0)
+                            
+                            NOVAAppsView()
+                                .tag(1)
+                            
+                            ContentView()
+                                .tag(2)
+                            
+                            AboutView()
+                                .tag(3)
+                        }
+                        
+                        // شريط التابات العائم والمتحرك الجديد (بدون خلفية)
+                        CustomFloatingTabBar(selectedTab: $tab, theme: theme)
                     }
-                    .tint(theme.accent)
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
                 }
             } else {
                 NOVAVIPLoginView()
@@ -194,7 +195,6 @@ private struct ForgeRootView: View {
         .forgeTheme(theme)
         .forgeScaledType()
         .onChange(of: scenePhase) { newPhase in
-            // إجبار التطبيق على شاشة التحقق في كل مرة يعود فيها للواجهة
             if newPhase == .active && isVIPLoggedIn {
                 validationState = .validating
             }
@@ -202,7 +202,96 @@ private struct ForgeRootView: View {
     }
 }
 
-// MARK: - شاشة التحقق من الترخيص (VIP Validation Screen)
+// MARK: - Custom Floating Tab Bar & Animations
+private struct CustomFloatingTabBar: View {
+    @Binding var selectedTab: Int
+    let theme: ForgeTheme
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            TabBarButton(id: 0, title: "الرئيسية", icon: "house.fill", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 1, title: "التطبيقات", icon: "square.grid.2x2.fill", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 2, title: "التوقيع", icon: "signature", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 3, title: "الإعدادات", icon: "gearshape.fill", selectedTab: $selectedTab, theme: theme)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        // رفع الشريط قليلاً ليطفو فوق الشاشة بدون خلفية بيضاء
+        .padding(.bottom, 24)
+        .background(
+            LinearGradient(colors: [
+                Color.clear,
+                Color(.systemBackground).opacity(0.4),
+                Color(.systemBackground).opacity(0.9)
+            ], startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        )
+    }
+}
+
+private struct TabBarButton: View {
+    let id: Int
+    let title: String
+    let icon: String
+    @Binding var selectedTab: Int
+    let theme: ForgeTheme
+    
+    @State private var isAnimating = false
+    
+    var isSelected: Bool {
+        selectedTab == id
+    }
+    
+    var body: some View {
+        Button {
+            // تفعيل الاهتزاز والأنيميشن عند الضغط
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selectedTab = id
+            triggerAnimation()
+        } label: {
+            VStack(spacing: 5) {
+                ZStack {
+                    // الدائرة الشفافة التي تظهر فقط عند التحديد
+                    Circle()
+                        .fill(isSelected ? theme.accent.opacity(0.15) : Color.clear)
+                        .frame(width: 48, height: 48)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(isSelected ? theme.accent : Color.gray.opacity(0.6))
+                        // أنيميشن الصعود للاعلى
+                        .offset(y: isAnimating ? -12 : 0)
+                        // أنيميشن الميلان والدوران
+                        .rotationEffect(.degrees(isAnimating ? 15 : 0))
+                }
+                
+                Text(title)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                    .foregroundColor(isSelected ? theme.accent : Color.gray.opacity(0.6))
+            }
+            .frame(maxWidth: .infinity)
+            // لجعل مساحة الزر قابلة للضغط بالكامل
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func triggerAnimation() {
+        // حركة الصعود والميلان السريعة
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5, blendDuration: 0.5)) {
+            isAnimating = true
+        }
+        // العودة للوضع الطبيعي داخل الدائرة
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.5, blendDuration: 0.5)) {
+                isAnimating = false
+            }
+        }
+    }
+}
+
+// MARK: - VIP Validation View
 struct NOVAVIPValidationView: View {
     @AppStorage("vip_username") private var vipUsername = ""
     @AppStorage("vip_password") private var vipPassword = ""
@@ -263,7 +352,6 @@ struct NOVAVIPValidationView: View {
     }
     
     private func performCheck() async {
-        // تأخير بسيط لإعطاء فخامة للشاشة وتجنب الوميض السريع
         try? await Task.sleep(nanoseconds: 1_000_000_000)
         
         guard !vipUsername.isEmpty, let url = URL(string: "https://nova-ipa.hassanyipa.workers.dev/") else {
@@ -275,7 +363,7 @@ struct NOVAVIPValidationView: View {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("SuperNova2026!", forHTTPHeaderField: "Nova-Secret")
-        request.cachePolicy = .reloadIgnoringLocalCacheData // منع استخدام الكاش القديم
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         
         let bodyData: [String: String] = [
             "username": vipUsername,
@@ -292,15 +380,11 @@ struct NOVAVIPValidationView: View {
             }
             
             if httpResponse.statusCode == 200 {
-                // نجاح التحقق
                 await MainActor.run { onSuccess() }
             } else {
-                // طرد (مرفوض، محظور، أو منتهي)
                 await clearCredentialsAndFail()
             }
         } catch {
-            // في حال عدم وجود إنترنت، ممكن نخليه يعبر أو يرفض، الأفضل نطرده كإجراء أمني صارم
-            // أو نمرره مؤقتاً إذا ردنا تساهل. حالياً راح نرفض الدخول.
             await MainActor.run { onFail() }
         }
     }
