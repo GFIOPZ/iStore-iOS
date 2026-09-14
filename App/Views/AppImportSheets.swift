@@ -13,57 +13,81 @@ struct URLImportSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
+            VStack(spacing: 0) {
+                VStack(spacing: 10) {
+                    Image(systemName: "link")
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(T.accent)
+                        .frame(width: 58, height: 58)
+                        .glassSurface(.icon, cornerRadius: 19)
+
+                    Text("Import from Link")
+                        .font(T.sans(21, .bold))
+                        .foregroundStyle(T.ink)
+
+                    Text("Paste the direct IPA link below")
+                        .font(T.sans(11, .medium))
+                        .foregroundStyle(T.ink3)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
+
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("IPA URL")
-                        .font(T.sans(14, .semibold))
-                        .foregroundColor(T.ink)
+                    Text("IPA / URL")
+                        .font(T.sans(12, .semibold))
+                        .foregroundStyle(T.ink2)
+
                     TextField("https://…", text: $urlText)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                         .submitLabel(.done)
-                        .padding(.horizontal, 14)
-                        .frame(height: 50)
-                        .glassSurface(.button, cornerRadius: 15)
+                        .padding(.horizontal, 15)
+                        .frame(height: 54)
+                        .glassSurface(.composerField, cornerRadius: 17)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .stroke(T.rule, lineWidth: AppStroke.hairline)
+                            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                .stroke(T.accent.opacity(0.14), lineWidth: AppStroke.hairline)
                         }
                 }
+                .padding(.top, 26)
 
                 Button(action: importAction) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 9) {
                         if isLoading {
-                            ProgressView().tint(T.ink)
+                            ProgressView().tint(T.accent)
                         } else {
                             Image(systemName: "arrow.down.circle.fill")
                         }
-                        Text(isLoading ? "Downloading…" : "Import")
-                            .font(T.sans(15, .semibold))
+
+                        Text(isLoading ? "Importing…" : "Import")
+                            .font(T.sans(15, .bold))
                     }
-                    .foregroundColor(T.ink)
+                    .foregroundStyle(T.accent)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .glassSurface(.button, cornerRadius: 16)
+                    .frame(height: 54)
+                    .glassSurface(.button, cornerRadius: 18)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(T.accent.opacity(0.22), lineWidth: AppStroke.hairline)
+                    }
                 }
                 .buttonStyle(GlassTactileButtonStyle())
                 .disabled(isLoading || urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+                .padding(.top, 14)
 
                 Spacer()
             }
-            .padding(20)
+            .padding(.horizontal, 20)
             .background { ForgeBackdrop() }
-            .navigationTitle("Import URL")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .floatingGlassBackButton(action: { dismiss() })
-        .presentationDetents([.height(260)])
+        .presentationDetents([.height(310)])
         .presentationDragIndicator(.visible)
         .onChange(of: isLoading) { nowLoading in
-            if !nowLoading {
-                dismiss()
-            }
+            if !nowLoading { dismiss() }
         }
     }
 }
@@ -106,20 +130,17 @@ struct AppEditorSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    iconButton
+                    appHero
                     editFields
-                    signingAssets
                     toolsSection
-                    signingOptions
                     signButton
                 }
-                .padding(.top, 18)
-                .padding(.bottom, 30)
+                .padding(.top, 20)
+                .padding(.bottom, 34)
             }
             .scrollIndicators(.hidden)
             .background { ForgeBackdrop() }
-            .navigationTitle(appName.isEmpty ? "Application" : appName)
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(isPresented: $showIconDocumentPicker) {
             ForgeDocumentPicker(contentTypes: [.image], onPick: { urls in
@@ -131,23 +152,15 @@ struct AppEditorSheet: View {
             })
             .ignoresSafeArea()
         }
-        .fileImporter(isPresented: $showDylibFileImporter,
-                      allowedContentTypes: [UTType(filenameExtension: "dylib") ?? .data]) { result in
+        .fileImporter(
+            isPresented: $showDylibFileImporter,
+            allowedContentTypes: [UTType(filenameExtension: "dylib") ?? .data]
+        ) { result in
             if case .success(let url) = result {
                 onChooseDylib(url)
             }
         }
         .floatingGlassBackButton(action: { dismiss() })
-        .sheet(isPresented: $showShareSheet) {
-            if let shareURL {
-                ShareSheet(items: [shareURL])
-            }
-        }
-        .alert("IPA unavailable", isPresented: $showShareError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Sign or import an IPA before sharing it.")
-        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onChange(of: selectedPhoto) { item in
@@ -155,8 +168,8 @@ struct AppEditorSheet: View {
         }
     }
 
-    private var iconButton: some View {
-        VStack(spacing: 10) {
+    private var appHero: some View {
+        VStack(spacing: 11) {
             Group {
                 if let iconURL, let image = UIImage(contentsOfFile: iconURL.path) {
                     Image(uiImage: image)
@@ -164,42 +177,28 @@ struct AppEditorSheet: View {
                         .scaledToFill()
                 } else {
                     Image(systemName: "app.fill")
-                        .font(.system(size: 42, weight: .medium))
-                        .foregroundColor(T.accent2)
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundStyle(T.accent)
                 }
             }
-            .frame(width: 92, height: 92)
+            .frame(width: 88, height: 88)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .glassSurface(.card, cornerRadius: 24)
+            .glassSurface(.hero, cornerRadius: 24)
             .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(T.rule, lineWidth: AppStroke.hairline)
-                }
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(T.accent.opacity(0.18), lineWidth: AppStroke.hairline)
+            }
 
-            Text("Change Icon")
-                .font(T.sans(13, .medium))
-                .foregroundColor(T.ink2)
+            Text(appName.isEmpty ? "Application" : appName)
+                .font(.system(size: 21, weight: .bold, design: .rounded))
+                .foregroundStyle(T.ink)
+                .lineLimit(1)
 
-            HStack(spacing: 10) {
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label("Photos", systemImage: "photo.on.rectangle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(GlassTactileButtonStyle())
-
-                Button { showIconDocumentPicker = true } label: {
-                    Label("Files", systemImage: "folder")
-                        .font(T.sans(13, .semibold))
-                        .foregroundColor(T.ink)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .glassSurface(.button, cornerRadius: 14)
-                }
-                .buttonStyle(GlassTactileButtonStyle())
+            if !bundleID.isEmpty {
+                Text(bundleID)
+                    .font(T.mono(9, .medium))
+                    .foregroundStyle(T.ink3)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, T.pad)
@@ -213,31 +212,9 @@ struct AppEditorSheet: View {
             GlassRowDivider()
             GlassInputRow(icon: "number", label: "Version", placeholder: "1.0", text: $version)
         }
-        .glassSurface(.card, cornerRadius: 18)
+        .glassSurface(.card, cornerRadius: 20)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(T.rule, lineWidth: AppStroke.hairline)
-        }
-        .padding(.horizontal, T.pad)
-    }
-
-    private var signingAssets: some View {
-        VStack(spacing: 0) {
-            GlassSecondaryButton(label: certificateName == nil ? "Certificate (.p12)" : certificateName!, systemImage: "key.fill") {
-                onChooseCertificate()
-            }
-            GlassRowDivider()
-            GlassSecondaryButton(label: profileName == nil ? "Provisioning Profile" : profileName!, systemImage: "checkmark.seal.fill") {
-                onChooseProfile()
-            }
-            if !hasSavedPassword {
-                GlassRowDivider()
-                GlassInputRow(icon: "lock.fill", label: "P12 Password", placeholder: "Required", text: $password, isSecure: true)
-            }
-        }
-        .glassSurface(.card, cornerRadius: 18)
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(T.rule, lineWidth: AppStroke.hairline)
         }
         .padding(.horizontal, T.pad)
@@ -245,81 +222,66 @@ struct AppEditorSheet: View {
 
     private var toolsSection: some View {
         VStack(spacing: 0) {
-            GlassSecondaryButton(label: dylibURL == nil ? "Add Dylib" : "Dylib Added", systemImage: "puzzlepiece.extension") {
+            GlassSecondaryButton(
+                label: dylibURL == nil ? "Add Dylib" : "Dylib Added",
+                systemImage: "puzzlepiece.extension"
+            ) {
                 showDylibFileImporter = true
             }
+
             if dylibURL != nil {
                 GlassRowDivider()
-                GlassSecondaryButton(label: "Remove Dylib", systemImage: "minus.circle", destructive: true) {
+                GlassSecondaryButton(
+                    label: "Remove Dylib",
+                    systemImage: "minus.circle",
+                    destructive: true
+                ) {
                     onRemoveDylib()
                 }
             }
-            GlassRowDivider()
-            GlassSecondaryButton(label: "Share IPA", systemImage: "square.and.arrow.up") {
-                guard let shareURL, FileManager.default.fileExists(atPath: shareURL.path) else {
-                    showShareError = true
-                    return
-                }
-                showShareSheet = true
-            }
-            GlassRowDivider()
-            GlassSecondaryButton(label: removeExtensions ? "Extensions Will Be Removed" : "Remove App Extensions", systemImage: "rectangle.badge.minus") {
-                showExtensionAlert = true
-            }
         }
-        .glassSurface(.card, cornerRadius: 18)
+        .glassSurface(.card, cornerRadius: 20)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(T.rule, lineWidth: AppStroke.hairline)
-        }
-        .padding(.horizontal, T.pad)
-        .alert("Remove App Extensions?", isPresented: $showExtensionAlert) {
-            Button("Remove", role: .destructive) { removeExtensions = true }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("App extensions will be removed while the IPA is signed.")
-        }
-    }
-
-    private var signingOptions: some View {
-        VStack(spacing: 0) {
-            GlassToggleRow(label: "Enable Files import / sharing", isOn: $enableDocuments)
-        }
-        .glassSurface(.card, cornerRadius: 18)
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(T.rule, lineWidth: AppStroke.hairline)
         }
         .padding(.horizontal, T.pad)
     }
 
     private var signButton: some View {
-        HStack(spacing: 10) {
-            actionButton(title: "Sign Only", icon: "signature", action: onSignOnly)
-            actionButton(title: "Sign & Install", icon: "arrow.down.app", action: onSign)
-        }
-        .disabled(!canSign || isSigning)
-        .opacity(canSign && !isSigning ? 1 : 0.45)
-        .padding(.horizontal, T.pad)
-    }
+        Button(action: onSign) {
+            HStack(spacing: 9) {
+                if isSigning {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "arrow.down.app.fill")
+                }
 
-    private func actionButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if isSigning { ProgressView().tint(T.ink) }
-                Image(systemName: icon)
-                Text(isSigning ? LocalizedStringKey("Signing…") : LocalizedStringKey(title))
-                    .font(T.sans(14, .semibold))
+                Text(isSigning ? "Signing…" : "Sign & Install")
+                    .font(T.sans(16, .bold))
             }
-            .foregroundColor(T.ink)
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: 54)
-            .glassSurface(.button, cornerRadius: 17)
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(T.rule2, lineWidth: AppStroke.hairline)
+            .frame(height: 58)
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [T.accent, T.accent.opacity(0.78)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.20), lineWidth: 0.8)
+            }
+            .shadow(color: T.accent.opacity(0.20), radius: 14, y: 7)
         }
         .buttonStyle(GlassTactileButtonStyle())
+        .disabled(!canSign || isSigning)
+        .opacity(canSign && !isSigning ? 1 : 0.48)
+        .padding(.horizontal, T.pad)
     }
 }
