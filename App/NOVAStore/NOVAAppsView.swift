@@ -123,13 +123,13 @@ struct NOVAAppsView: View {
 
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 9) {
+                        LazyVStack(spacing: 2) {
                             ForEach(filteredApps) { app in
                                 waveRow(app)
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.top, 126)
+                        .padding(.top, showExclusiveHint ? 177 : 126)
                         .padding(.bottom, 30)
                     }
                     .coordinateSpace(name: "NOVAAppsScroll")
@@ -161,11 +161,7 @@ struct NOVAAppsView: View {
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                exclusiveButton
-
-                Spacer(minLength: 8)
-
+            ZStack(alignment: .topLeading) {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("NOVA STORE")
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
@@ -182,12 +178,24 @@ struct NOVAAppsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .topTrailing)
+
+                exclusiveButton
             }
+            .environment(\.layoutDirection, .leftToRight)
             .padding(.horizontal, 20)
             .padding(.top, 13)
             .padding(.bottom, 9)
 
             searchBar
+
+            if showExclusiveHint {
+                ExclusiveHintBubble()
+                    .padding(.top, 1)
+                    .padding(.horizontal, 18)
+                    .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
+                    .zIndex(30)
+            }
         }
         .background {
             LinearGradient(
@@ -256,7 +264,7 @@ struct NOVAAppsView: View {
                 if showExclusiveApps {
                     ZStack(alignment: .bottomTrailing) {
                         Image(systemName: "house.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.system(size: 18, weight: .bold))
 
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 10, weight: .bold))
@@ -264,28 +272,16 @@ struct NOVAAppsView: View {
                             .offset(x: 4, y: 4)
                     }
                     .foregroundStyle(brandGradient)
-                    .rotation3DEffect(
-                        .degrees(180),
-                        axis: (x: 0, y: 1, z: 0)
-                    )
                 } else {
                     Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(brandGradient)
                 }
             }
-            .frame(width: 58, height: 58)
+            .frame(width: 52, height: 52)
             .shadow(color: gradientStart.opacity(0.10), radius: 10, y: 4)
         }
         .buttonStyle(PressableStyle())
-        .overlay(alignment: .topLeading) {
-            if showExclusiveHint {
-                ExclusiveHintBubble()
-                    .offset(x: 4, y: 64)
-                    .transition(.scale(scale: 0.82, anchor: .topLeading).combined(with: .opacity))
-                    .zIndex(20)
-            }
-        }
     }
 
     // MARK: - Wave rows
@@ -296,20 +292,15 @@ struct NOVAAppsView: View {
             let viewportCenter = UIScreen.main.bounds.height * 0.48
             let distance = abs(frame.midY - viewportCenter)
             let amount = min(distance / 700, 1)
-            let wave = sin(frame.midY / 115) * (1 - amount) * 4
+            let wave = sin(frame.midY / 105) * (1 - amount) * 5
+            let lift = sin(frame.midY / 125) * (1 - amount) * 1.5
 
             appRow(app)
-                .scaleEffect(0.975 + (1 - amount) * 0.025)
-                .rotation3DEffect(
-                    .degrees(Double((frame.midY - viewportCenter) / 95) * 1.35),
-                    axis: (x: 1, y: 0, z: 0),
-                    perspective: 0.75
-                )
-                .rotationEffect(.degrees(Double(wave) * 0.28))
-                .offset(x: wave)
-                .opacity(0.88 + (1 - amount) * 0.12)
+                .scaleEffect(0.985 + (1 - amount) * 0.015)
+                .offset(x: wave, y: lift)
+                .opacity(0.92 + (1 - amount) * 0.08)
         }
-        .frame(height: 82)
+        .frame(height: 88)
     }
 
     @ViewBuilder
@@ -361,7 +352,7 @@ struct NOVAAppsView: View {
             installPill(app)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -469,35 +460,33 @@ private struct ExclusiveHintBubble: View {
     private let purple = Color(hex: "7C3AED")
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(purple)
-
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("اضغط هنا وشاهد حصرياتكم 🔥")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(.primary)
-            }
+                    .lineLimit(1)
 
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.left")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(purple)
                 Text("تطبيقات مضافة من لوحة التحكم")
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "arrow.up.left")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(purple)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(purple.opacity(0.20), lineWidth: 1)
         }
         .shadow(color: purple.opacity(0.14), radius: 12, y: 5)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
