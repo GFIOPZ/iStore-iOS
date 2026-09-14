@@ -427,25 +427,17 @@ private struct ForgeRootView: View {
     }
 }
 
-// MARK: - Floating Tab Bar
+// MARK: - Floating Liquid Glass Tab Bar
 
-private struct CustomFloatingTabBar:
-    View {
+private struct CustomFloatingTabBar: View {
 
     @Binding
-    var selectedTab:
-        Int
+    var selectedTab: Int
 
-    let theme:
-        ForgeTheme
+    let theme: ForgeTheme
 
-    var body:
-        some View {
-
-        HStack(
-            spacing: 0
-        ) {
-
+    var body: some View {
+        HStack(spacing: 4) {
             TabBarButton(
                 id: 0,
                 title: "الرئيسية",
@@ -478,214 +470,134 @@ private struct CustomFloatingTabBar:
                 theme: theme
             )
         }
-
-        .padding(
-            .horizontal,
-            10
-        )
-
-        .padding(
-            .top,
-            10
-        )
-
-        .padding(
-            .bottom,
-            24
-        )
-
-        .background(
-
-            LinearGradient(
-                colors: [
-                    .clear,
-
-                    Color(
-                        .systemBackground
-                    )
-                    .opacity(0.4),
-
-                    Color(
-                        .systemBackground
-                    )
-                    .opacity(0.9)
-                ],
-
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            .ignoresSafeArea()
-
-            .allowsHitTesting(false)
-        )
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(height: 72)
+        .glassSurface(.tabBar, cornerRadius: 27)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 10)
     }
 }
 
 // MARK: - Tab Button
 
-private struct TabBarButton:
-    View {
+private struct TabBarButton: View {
 
-    let id:
-        Int
-
-    let title:
-        String
-
-    let icon:
-        String
+    let id: Int
+    let title: String
+    let icon: String
 
     @Binding
-    var selectedTab:
-        Int
+    var selectedTab: Int
 
-    let theme:
-        ForgeTheme
+    let theme: ForgeTheme
 
     @State
-    private var isAnimating =
-        false
+    private var pressed = false
 
-    private var isSelected:
-        Bool {
-
+    private var isSelected: Bool {
         selectedTab == id
     }
 
-    var body:
-        some View {
-
+    var body: some View {
         Button {
-
-            UIImpactFeedbackGenerator(
-                style: .light
-            )
-            .impactOccurred()
-
-            selectedTab =
-                id
-
-            triggerAnimation()
-
-        } label: {
-
-            VStack(
-                spacing: 5
-            ) {
-
-                ZStack {
-
-                    Circle()
-
-                        .fill(
-                            isSelected
-                                ? theme.accent
-                                    .opacity(0.15)
-                                : .clear
-                        )
-
-                        .frame(
-                            width: 48,
-                            height: 48
-                        )
-
-                    Image(
-                        systemName: icon
-                    )
-
-                    .font(
-                        .system(
-                            size: 20,
-                            weight: .semibold
-                        )
-                    )
-
-                    .foregroundColor(
-                        isSelected
-                            ? theme.accent
-                            : Color.gray
-                                .opacity(0.6)
-                    )
-
-                    .offset(
-                        y:
-                            isAnimating
-                                ? -12
-                                : 0
-                    )
-
-                    .rotationEffect(
-                        .degrees(
-                            isAnimating
-                                ? 15
-                                : 0
-                        )
-                    )
-                }
-
-                Text(title)
-
-                    .font(
-                        .system(
-                            size: 11,
-                            weight:
-                                isSelected
-                                    ? .bold
-                                    : .medium
-                        )
-                    )
-
-                    .foregroundColor(
-                        isSelected
-                            ? theme.accent
-                            : Color.gray
-                                .opacity(0.6)
-                    )
-            }
-
-            .frame(
-                maxWidth: .infinity
-            )
-
-            .contentShape(
-                Rectangle()
-            )
-        }
-
-        .buttonStyle(
-            .plain
-        )
-    }
-
-    private func triggerAnimation() {
-
-        withAnimation(
-            .spring(
-                response: 0.3,
-                dampingFraction: 0.5,
-                blendDuration: 0.5
-            )
-        ) {
-
-            isAnimating =
-                true
-        }
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.2
-        ) {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
 
             withAnimation(
                 .spring(
-                    response: 0.3,
-                    dampingFraction: 0.5,
-                    blendDuration: 0.5
+                    response: 0.34,
+                    dampingFraction: 0.78
                 )
             ) {
+                selectedTab = id
+            }
 
-                isAnimating =
-                    false
+            animatePress()
+        } label: {
+            VStack(spacing: 3) {
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(
+                            cornerRadius: 16,
+                            style: .continuous
+                        )
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    theme.accent.opacity(0.22),
+                                    theme.accent.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(
+                                cornerRadius: 16,
+                                style: .continuous
+                            )
+                            .stroke(
+                                theme.accent.opacity(0.18),
+                                lineWidth: 0.8
+                            )
+                        }
+                        .frame(width: 50, height: 39)
+                        .transition(
+                            .scale(scale: 0.82)
+                                .combined(with: .opacity)
+                        )
+                    }
+
+                    Image(systemName: icon)
+                        .font(
+                            .system(
+                                size: isSelected ? 18 : 17,
+                                weight: isSelected ? .semibold : .medium
+                            )
+                        )
+                        .foregroundStyle(
+                            isSelected
+                                ? theme.accent
+                                : theme.ink3
+                        )
+                        .scaleEffect(pressed ? 0.88 : 1)
+                }
+                .frame(height: 39)
+
+                Text(title)
+                    .font(
+                        .system(
+                            size: 10,
+                            weight: isSelected ? .semibold : .medium
+                        )
+                    )
+                    .foregroundStyle(
+                        isSelected
+                            ? theme.accent
+                            : theme.ink3
+                    )
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func animatePress() {
+        withAnimation(.easeOut(duration: 0.10)) {
+            pressed = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(
+                .spring(
+                    response: 0.28,
+                    dampingFraction: 0.68
+                )
+            ) {
+                pressed = false
             }
         }
     }
