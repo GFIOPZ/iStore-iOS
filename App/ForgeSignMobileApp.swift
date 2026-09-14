@@ -402,6 +402,7 @@ private struct ForgeRootView: View {
             ) {
 
                 NOVAHomeView()
+                    .enableNovaAutoRefresh()
                     .tag(0)
 
                 NOVAAppsView()
