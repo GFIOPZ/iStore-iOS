@@ -55,36 +55,15 @@ struct ContentView: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 0) {
-                        signingHeader
-                            .padding(.top, 28)
-
-                        signingActions
-                            .padding(.top, 28)
-
-                        Spacer(minLength: 40)
-                    }
-                    .padding(.horizontal, T.pad)
-                    .padding(.bottom, 110)
+                    signingHomeSection
+                        .padding(.horizontal, T.pad)
+                        .padding(.top, 28)
+                        .padding(.bottom, 110)
                 }
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
             }
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showIPAImporter) {
-                ForgeDocumentPicker { urls in
-                    showIPAImporter = false
-                    guard let url = urls.first else { return }
-
-                    let ext = url.pathExtension.lowercased()
-                    guard ext == "ipa" || ext == "zip" else { return }
-
-                    stageIPA(url)
-                } onCancel: {
-                    showIPAImporter = false
-                }
-                .ignoresSafeArea()
-            }
             .sheet(isPresented: $showImportSheet) {
                 ImportApplicationSheet(
                     importURLText: $importURLText,
@@ -98,38 +77,20 @@ struct ContentView: View {
                     onIPA: { selectedURL in
                         stageIPA(selectedURL)
                         showImportSheet = false
-
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
                             showAppEditor = true
                         }
                     },
                     onOpenApp: { selectedURL in
-                        if selectedURL != ipaURL {
+                        if selectedURL.path != ipaURL?.path {
                             stageIPA(selectedURL)
                         }
-
                         presentAfterImportDismiss {
                             showAppEditor = true
                         }
                     }
                 )
                 .liquidGlassSheet()
-            }
-            .sheet(isPresented: $showProfileSheet) {
-                ProfilesSheet()
-            }
-            .sheet(isPresented: $showCertSheet) {
-                CertificatesSheet()
-                    .liquidGlassSheet()
-            }
-            .sheet(isPresented: $showShare) {
-                if let signedIPA {
-                    ShareSheet(items: [signedIPA])
-                }
-            }
-            .sheet(isPresented: $showSources) {
-                SourcesView()
-                    .liquidGlassSheet()
             }
             .sheet(isPresented: $showAppEditor) {
                 AppEditorSheet(
@@ -140,9 +101,7 @@ struct ContentView: View {
                     hasSavedPassword: certStore.selected.flatMap {
                         certStore.savedPassword(for: $0)
                     } != nil,
-                    certificateName: certStore.selected == nil
-                        ? nil
-                        : localized("Certificate", "الشهادة"),
+                    certificateName: certStore.selected == nil ? nil : localized("Certificate", "الشهادة"),
                     profileName: profileStore.selected?.displayName,
                     preflightState: preflightState,
                     isSigning: signer.phase == .signing,
@@ -153,49 +112,27 @@ struct ContentView: View {
                     removeExtensions: $removeExtensions,
                     enableDocuments: $enableDocuments,
                     onChooseIcon: { url in
-                        selectedIconURL = signer.stage(
-                            url,
-                            as: "custom-icon-\(url.lastPathComponent)"
-                        )
+                        selectedIconURL = signer.stage(url, as: "custom-icon-\(url.lastPathComponent)")
                     },
                     onChoosePhoto: { item in
                         guard let item else { return }
-
                         Task { @MainActor in
-                            if let data = try? await item.loadTransferable(
-                                type: Data.self
-                            ) {
-                                let iconURL = signer.workDir
-                                    .appendingPathComponent("custom-icon.png")
-
-                                try? data.write(
-                                    to: iconURL,
-                                    options: .atomic
-                                )
-
+                            if let data = try? await item.loadTransferable(type: Data.self) {
+                                let iconURL = signer.workDir.appendingPathComponent("custom-icon.png")
+                                try? data.write(to: iconURL, options: .atomic)
                                 selectedIconURL = iconURL
                             }
                         }
                     },
-                    onChooseCertificate: {
-                        showCertSheet = true
-                    },
-                    onChooseProfile: {
-                        showProfileSheet = true
-                    },
-                    onChooseDylib: { url in
-                        stageDylib(url)
-                    },
+                    onChooseCertificate: { showCertSheet = true },
+                    onChooseProfile: { showProfileSheet = true },
+                    onChooseDylib: { url in stageDylib(url) },
                     onRemoveDylib: {
                         dylibURL = nil
                         injectIntoExtensions = false
                     },
-                    onSignOnly: {
-                        sign(installAfter: false)
-                    },
-                    onSign: {
-                        sign(installAfter: true)
-                    }
+                    onSignOnly: { },
+                    onSign: { sign(installAfter: true) }
                 )
             }
             .sheet(isPresented: $showLibrary) {
@@ -208,21 +145,42 @@ struct ContentView: View {
                 }
                 .liquidGlassSheet()
             }
+            .sheet(isPresented: $showIPAImporter) {
+                ForgeDocumentPicker { urls in
+                    showIPAImporter = false
+                    guard let url = urls.first else { return }
+                    let ext = url.pathExtension.lowercased()
+                    guard ext == "ipa" || ext == "zip" else { return }
+                    stageIPA(url)
+                } onCancel: {
+                    showIPAImporter = false
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showProfileSheet) {
+                ProfilesSheet()
+            }
+            .sheet(isPresented: $showCertSheet) {
+                CertificatesSheet()
+                    .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showSources) {
+                SourcesView()
+                    .liquidGlassSheet()
+            }
             .sheet(isPresented: $showUpdates) {
                 UpdatesSheet()
                     .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showShare) {
+                if let signedIPA { ShareSheet(items: [signedIPA]) }
             }
             .onChange(of: install.installStatus, perform: { status in
                 if status.hasPrefix("Install failed") {
                     if let id = lastRecordID {
                         history.setInstallState(.failed, for: id)
                     }
-
-                    repoStore.completeInstallAttempt(
-                        automaticInstallAppID,
-                        error: status
-                    )
-
+                    repoStore.completeInstallAttempt(automaticInstallAppID, error: status)
                     automaticInstallAppID = nil
                     automaticInstallAsAdditionalCopy = false
                 }
@@ -234,163 +192,128 @@ struct ContentView: View {
             }
             .onChange(of: repoStore.pendingIPA) { pendingIPA in
                 guard let pendingIPA else { return }
-
-                Task {
-                    await receiveDownloadedRepositoryIPA(pendingIPA)
-                }
+                Task { await receiveDownloadedRepositoryIPA(pendingIPA) }
             }
             .alert(
-                localized(
-                    "Delete signed library?",
-                    "حذف مكتبة التطبيقات الموقعة؟"
-                ),
+                localized("Delete signed library?", "حذف مكتبة التطبيقات الموقعة؟"),
                 isPresented: $showCleanupConfirmation
             ) {
-                Button(
-                    localized("Cancel", "إلغاء"),
-                    role: .cancel
-                ) {}
-
-                Button(
-                    localized("Delete and Clean", "حذف وتنضيف"),
-                    role: .destructive
-                ) {
+                Button(localized("Cancel", "إلغاء"), role: .cancel) {}
+                Button(localized("Delete and Clean", "حذف وتنضيف"), role: .destructive) {
                     cleanFilesAndLibrary()
                 }
             } message: {
-                Text(
-                    localized(
-                        "This removes signed IPA files and their library records. Certificates, profiles, and sources stay safe.",
-                        "سيتم حذف ملفات IPA الموقعة وسجلات المكتبة. الشهادات وملفات الحماية والمصادر لن تتأثر."
-                    )
-                )
+                Text(localized(
+                    "This removes signed IPA files and their library records. Certificates, profiles, and sources stay safe.",
+                    "سيتم حذف ملفات IPA الموقعة وسجلات المكتبة. الشهادات وملفات الحماية والمصادر لن تتأثر."
+                ))
             }
         }
     }
 
-    // MARK: - NOVA Sign Header
+    // MARK: - NOVA Sign Home
 
-    private var signingHeader: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                T.accent.opacity(0.22),
-                                T.accent.opacity(0.04),
-                                .clear
-                            ],
-                            center: .center,
-                            startRadius: 4,
-                            endRadius: 48
-                        )
-                    )
-                    .frame(width: 94, height: 94)
+    private var signingHomeSection: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 11) {
+                ZStack {
+                    Circle()
+                        .fill(T.accent.opacity(0.10))
+                        .frame(width: 92, height: 92)
 
-                Image(systemName: "signature")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(T.accent)
-                    .frame(width: 62, height: 62)
-                    .glassSurface(.icon, cornerRadius: 20)
-            }
+                    Circle()
+                        .stroke(T.accent.opacity(0.16), lineWidth: 1)
+                        .frame(width: 92, height: 92)
 
-            VStack(spacing: 6) {
+                    Image(systemName: "signature")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(T.accent)
+                        .frame(width: 62, height: 62)
+                        .glassSurface(.icon, cornerRadius: 21)
+                }
+
                 Text("NOVA SIGN")
-                    .font(
-                        .system(
-                            size: 27,
-                            weight: .bold,
-                            design: .rounded
-                        )
-                    )
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
                     .foregroundStyle(T.ink)
 
-                Text(
-                    localized(
-                        "Sign your applications with a clean and simple workflow.",
-                        "وقّع تطبيقاتك بسهولة وبواجهة بسيطة واحترافية."
-                    )
-                )
+                Text(localized(
+                    "A clean workspace for signing your applications.",
+                    "مساحة بسيطة واحترافية لتوقيع تطبيقاتك."
+                ))
                 .font(T.sans(12, .medium))
                 .foregroundStyle(T.ink3)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 290)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 14) {
+                novaSignAction(
+                    title: localized("Import File", "استيراد ملف"),
+                    subtitle: "IPA / ZIP",
+                    icon: "arrow.down.doc.fill",
+                    primary: true
+                ) {
+                    showImportSheet = true
+                }
+
+                novaSignAction(
+                    title: localized("Library", "المكتبة"),
+                    subtitle: localized("Your signed applications", "تطبيقاتك الموقعة"),
+                    icon: "square.stack.3d.up.fill",
+                    primary: false
+                ) {
+                    showLibrary = true
+                }
+            }
+            .padding(.top, 34)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
+
+            if signer.phase == .signing {
+                HStack(spacing: 10) {
+                    ProgressView().tint(T.accent)
+                    Text(localized("Signing and preparing installation…", "جارٍ التوقيع وتجهيز التثبيت…"))
+                        .font(T.sans(12, .semibold))
+                        .foregroundStyle(T.ink)
+                    Spacer()
+                }
+                .padding(15)
+                .glassSurface(.card, cornerRadius: 18)
+                .padding(.top, 18)
+            }
+
+            if case .failed(let message) = signer.phase {
+                Text(message)
+                    .font(T.mono(10))
+                    .foregroundStyle(T.bad)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(15)
+                    .glassSurface(.card, cornerRadius: 18)
+                    .padding(.top, 18)
             }
         }
-        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - NOVA Sign Actions
-
-    private var signingActions: some View {
-        VStack(spacing: 14) {
-            signingActionCard(
-                title: localized("Import File", "استيراد ملف"),
-                subtitle: localized(
-                    "Choose an IPA or ZIP file to start signing.",
-                    "اختر ملف IPA أو ZIP للبدء بالتوقيع."
-                ),
-                icon: "square.and.arrow.down",
-                isPrimary: true
-            ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showImportSheet = true
-            }
-
-            signingActionCard(
-                title: localized("Library", "المكتبة"),
-                subtitle: localized(
-                    "Open your signed applications.",
-                    "افتح تطبيقاتك الموقعة."
-                ),
-                icon: "square.stack.3d.up.fill",
-                isPrimary: false
-            ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showLibrary = true
-            }
-        }
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func signingActionCard(
+    private func novaSignAction(
         title: String,
         subtitle: String,
         icon: String,
-        isPrimary: Bool,
+        primary: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: 15) {
                 ZStack {
-                    RoundedRectangle(
-                        cornerRadius: 17,
-                        style: .continuous
-                    )
-                    .fill(
-                        isPrimary
-                            ? T.accent.opacity(0.13)
-                            : T.surface3
-                    )
-                    .frame(width: 54, height: 54)
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(primary ? T.accent.opacity(0.12) : T.surface3)
+                        .frame(width: 56, height: 56)
 
                     Image(systemName: icon)
-                        .font(
-                            .system(
-                                size: 20,
-                                weight: .semibold
-                            )
-                        )
-                        .foregroundStyle(
-                            isPrimary
-                                ? T.accent
-                                : T.ink
-                        )
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(primary ? T.accent : T.ink)
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(T.sans(16, .bold))
                         .foregroundStyle(T.ink)
@@ -398,152 +321,31 @@ struct ContentView: View {
                     Text(subtitle)
                         .font(T.mono(9, .medium))
                         .foregroundStyle(T.ink3)
-                        .lineLimit(2)
                 }
 
-                Spacer(minLength: 8)
+                Spacer()
 
                 Image(systemName: "chevron.forward")
-                    .font(
-                        .system(
-                            size: 12,
-                            weight: .bold
-                        )
-                    )
-                    .foregroundStyle(
-                        isPrimary
-                            ? T.accent
-                            : T.ink3
-                    )
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(primary ? T.accent : T.ink3)
+                    .frame(width: 34, height: 34)
+                    .glassSurface(.icon, cornerRadius: 13)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .frame(height: 88)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 82)
-            .glassSurface(
-                isPrimary ? .button : .card,
-                cornerRadius: 22
-            )
+            .glassSurface(primary ? .button : .card, cornerRadius: 23)
             .overlay {
-                RoundedRectangle(
-                    cornerRadius: 22,
-                    style: .continuous
-                )
-                .stroke(
-                    isPrimary
-                        ? T.accent.opacity(0.22)
-                        : T.rule,
-                    lineWidth: AppStroke.hairline
-                )
+                RoundedRectangle(cornerRadius: 23, style: .continuous)
+                    .stroke(primary ? T.accent.opacity(0.22) : T.rule, lineWidth: AppStroke.hairline)
             }
         }
         .buttonStyle(GlassTactileButtonStyle())
-    }
-
-    /// Claims one completed repository download, stages it for signing, and
-    /// starts the automatic signing path. Clearing `pendingIPA` happens first
-    /// so a tab change cannot trigger duplicate work for the same file.
-    @MainActor
-    private func receiveDownloadedRepositoryIPA(_ pendingIPA: URL) async {
-        guard repoStore.pendingIPA == pendingIPA else { return }
-
-        let downloadedAppID = repoStore.pendingAppID
-        let downloadedAppName = repoStore.pendingAppName
-        let installAsAdditionalCopy = repoStore.pendingInstallAsAdditionalCopy
-        repoStore.pendingIPA = nil
-        repoStore.pendingAppID = nil
-        repoStore.pendingAppName = nil
-        repoStore.pendingInstallAsAdditionalCopy = false
-
-        automaticInstallAppID = downloadedAppID
-        automaticInstallAsAdditionalCopy = installAsAdditionalCopy
-        // The repository download is already inside iStore's persistent
-        // download directory. Reuse it directly instead of copying a large
-        // IPA synchronously on MainActor before signing.
-        stageIPA(pendingIPA, fallbackToSource: true, alreadyStaged: true)
-
-        guard ipaURL != nil else {
-            let message = localized(
-                "The downloaded IPA could not be prepared for signing.",
-                "تعذر تجهيز ملف IPA الذي تم تنزيله للتوقيع."
-            )
-            repoStore.completeInstallAttempt(downloadedAppID, error: message)
-            automaticInstallAppID = nil
-            automaticInstallAsAdditionalCopy = false
-            return
-        }
-
-        if let downloadedAppName, !downloadedAppName.isEmpty {
-            appDisplayName = downloadedAppName
-        }
-
-        if installAsAdditionalCopy, let downloadedAppName, !downloadedAppName.isEmpty {
-            // Keep a stable per-app counter so every generated copy has a
-            // distinct visible name: App 2, App 3, App 4, and so on.
-            let copyNumber = nextRepeatDisplayNumber(for: downloadedAppID)
-            appDisplayName = "\(downloadedAppName) \(copyNumber)"
-        }
-
-        // GET is a silent install flow: close only any editor left from a
-        // previous manual import. Keep the storefront visible while signing
-        // and handing the IPA to iOS.
-        showAppEditor = false
-        await autoSignDownloadedIPAWhenReady()
-    }
-
-    private func nextRepeatDisplayNumber(for appID: String?) -> Int {
-        guard let appID, !appID.isEmpty else { return 2 }
-        let key = "repo.repeat.displayNumber.\(appID)"
-        let next = max(UserDefaults.standard.integer(forKey: key) + 1, 2)
-        UserDefaults.standard.set(next, forKey: key)
-        return next
-    }
-
-    private func additionalCopyIdentifier(from original: String) -> String? {
-        let base = original.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else { return nil }
-        let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6).lowercased()
-        let prefix = String(base.prefix(230)).trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        let candidate = "\(prefix).copy\(token)"
-        return candidate.count <= 255 ? candidate : nil
     }
 
     // MARK: - Import
 
-    private var importSection: some View {
-        Button {
-            showImportSheet = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(T.isDark ? .white : T.ink)
-                    .frame(width: 40, height: 40)
-                    .fClearGlass(in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                Text(localized("Import Application", "استيراد تطبيق"))
-                    .font(T.sans(17, .bold))
-                    .foregroundColor(T.isDark ? .white : T.ink)
-                Spacer()
-            }
-            .foregroundColor(T.ink)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 66)
-            .contentShape(Rectangle())
-            .glassSurface(.button, cornerRadius: 18)
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(T.rule, lineWidth: AppStroke.hairline)
-            }
-        }
-        .buttonStyle(GlassTactileButtonStyle())
-        .contentShape(Rectangle())
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, T.pad)
-        .padding(.top, 24)
-    }
-
-    private var certificateSection: some View {
+    private var importSection: some View { EmptyView() }\n\n    private var certificateSection: some View {
         Button {
             showCertSheet = true
         } label: {
