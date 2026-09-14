@@ -51,159 +51,393 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                ForgeBackdrop()
+                    .ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 0) {
-                        importSection
-                        certificateSection
-                        workspaceSection
+                        signingHeader
+                            .padding(.top, 28)
+
+                        signingActions
+                            .padding(.top, 28)
+
+                        Spacer(minLength: 40)
                     }
-                    .padding(.top, 30)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, T.pad)
+                    .padding(.bottom, 110)
                 }
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
-                .background { ForgeBackdrop() }
-                .toolbar(.hidden, for: .navigationBar)
-                .sheet(isPresented: $showIPAImporter) {
-                    ForgeDocumentPicker { urls in
-                        showIPAImporter = false
-                        guard let url = urls.first else { return }
-                        let ext = url.pathExtension.lowercased()
-                        guard ext == "ipa" || ext == "zip" else { return }
-                        stageIPA(url)
-                    } onCancel: {
-                        showIPAImporter = false
-                    }
-                    .ignoresSafeArea()
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showIPAImporter) {
+                ForgeDocumentPicker { urls in
+                    showIPAImporter = false
+                    guard let url = urls.first else { return }
+
+                    let ext = url.pathExtension.lowercased()
+                    guard ext == "ipa" || ext == "zip" else { return }
+
+                    stageIPA(url)
+                } onCancel: {
+                    showIPAImporter = false
                 }
-                .sheet(isPresented: $showImportSheet) {
-                    ImportApplicationSheet(
-                        importURLText: $importURLText,
-                        isDownloadingURL: isDownloadingImport,
-                        onImportURL: importFromURL,
-                        ipaURL: ipaURL,
-                        appName: appDisplayName,
-                        bundleID: bundleId,
-                        preflightState: preflightState,
-                        importedURLs: importedAppURLs,
-                        onIPA: { selectedURL in
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showImportSheet) {
+                ImportApplicationSheet(
+                    importURLText: $importURLText,
+                    isDownloadingURL: isDownloadingImport,
+                    onImportURL: importFromURL,
+                    ipaURL: ipaURL,
+                    appName: appDisplayName,
+                    bundleID: bundleId,
+                    preflightState: preflightState,
+                    importedURLs: importedAppURLs,
+                    onIPA: { selectedURL in
+                        stageIPA(selectedURL)
+                        showImportSheet = false
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            showAppEditor = true
+                        }
+                    },
+                    onOpenApp: { selectedURL in
+                        if selectedURL != ipaURL {
                             stageIPA(selectedURL)
-                            showImportSheet = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                showAppEditor = true
-                            }
-                        },
-                        onOpenApp: { selectedURL in
-                            if selectedURL != ipaURL {
-                                stageIPA(selectedURL)
-                            }
-                            presentAfterImportDismiss { showAppEditor = true }
                         }
-                    )
-                    .liquidGlassSheet()
-                }
-                .sheet(isPresented: $showProfileSheet) {
-                    ProfilesSheet()
-                }
-                .sheet(isPresented: $showCertSheet) {
-                    CertificatesSheet()
-                        .liquidGlassSheet()
-                }
-                .sheet(isPresented: $showShare) {
-                    if let signedIPA { ShareSheet(items: [signedIPA]) }
-                }
-                .sheet(isPresented: $showSources) {
-                    SourcesView()
-                        .liquidGlassSheet()
-                }
-                .sheet(isPresented: $showAppEditor) {
-                    AppEditorSheet(appName: $appDisplayName,
-                                   bundleID: $bundleId,
-                                   version: $appVersion,
-                                   password: $password,
-                                   hasSavedPassword: certStore.selected.flatMap { certStore.savedPassword(for: $0) } != nil,
-                                   certificateName: certStore.selected == nil ? nil : localized("Certificate", "الشهادة"),
-                                   profileName: profileStore.selected?.displayName,
-                                   preflightState: preflightState,
-                                   isSigning: signer.phase == .signing,
-                                   canSign: canSign,
-                                   dylibURL: dylibURL,
-                                   iconURL: selectedIconURL,
-                                   shareURL: signedIPA ?? ipaURL,
-                                   removeExtensions: $removeExtensions,
-                                   enableDocuments: $enableDocuments,
-                                   onChooseIcon: { url in
-                                       selectedIconURL = signer.stage(url, as: "custom-icon-\(url.lastPathComponent)")
-                                   },
-                                   onChoosePhoto: { item in
-                                       guard let item else { return }
-                                       Task { @MainActor in
-                                           if let data = try? await item.loadTransferable(type: Data.self) {
-                                               let iconURL = signer.workDir.appendingPathComponent("custom-icon.png")
-                                               try? data.write(to: iconURL, options: .atomic)
-                                               selectedIconURL = iconURL
-                                           }
-                                       }
-                                   },
-                                   onChooseCertificate: { showCertSheet = true },
-                                   onChooseProfile: { showProfileSheet = true },
-                                   onChooseDylib: { url in stageDylib(url) },
-                                   onRemoveDylib: {
-                                       dylibURL = nil
-                                       injectIntoExtensions = false
-                                   },
-                                   onSignOnly: { sign(installAfter: false) },
-                                   onSign: { sign(installAfter: true) })
-                }
-                .sheet(isPresented: $showLibrary) {
-                    LibraryView { record in
-                        install.install(ipa: history.outputURL(for: record),
-                                        bundleId: record.bundleId,
-                                        version: record.version)
-                    }
-                    .liquidGlassSheet()
-                }
-                .sheet(isPresented: $showUpdates) {
-                    UpdatesSheet()
-                        .liquidGlassSheet()
-                }
-                .onChange(of: install.installStatus, perform: { status in
-                    if status.hasPrefix("Install failed") {
-                        if let id = lastRecordID {
-                            history.setInstallState(.failed, for: id)
+
+                        presentAfterImportDismiss {
+                            showAppEditor = true
                         }
-                        repoStore.completeInstallAttempt(automaticInstallAppID, error: status)
-                        automaticInstallAppID = nil
-                        automaticInstallAsAdditionalCopy = false
                     }
-                })
-                .task {
-                    if let pendingIPA = repoStore.pendingIPA {
-                        await receiveDownloadedRepositoryIPA(pendingIPA)
-                    }
-                }
-                .onChange(of: repoStore.pendingIPA) { pendingIPA in
-                    guard let pendingIPA else { return }
-                    Task {
-                        await receiveDownloadedRepositoryIPA(pendingIPA)
-                    }
-                }
-                .alert(
-                    localized("Delete signed library?", "حذف مكتبة التطبيقات الموقعة؟"),
-                    isPresented: $showCleanupConfirmation
-                ) {
-                    Button(localized("Cancel", "إلغاء"), role: .cancel) {}
-                    Button(localized("Delete and Clean", "حذف وتنضيف"), role: .destructive) {
-                        cleanFilesAndLibrary()
-                    }
-                } message: {
-                    Text(localized(
-                        "This removes signed IPA files and their library records. Certificates, profiles, and sources stay safe.",
-                        "سيتم حذف ملفات IPA الموقعة وسجلات المكتبة. الشهادات وملفات الحماية والمصادر لن تتأثر."
-                    ))
+                )
+                .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showProfileSheet) {
+                ProfilesSheet()
+            }
+            .sheet(isPresented: $showCertSheet) {
+                CertificatesSheet()
+                    .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showShare) {
+                if let signedIPA {
+                    ShareSheet(items: [signedIPA])
                 }
             }
+            .sheet(isPresented: $showSources) {
+                SourcesView()
+                    .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showAppEditor) {
+                AppEditorSheet(
+                    appName: $appDisplayName,
+                    bundleID: $bundleId,
+                    version: $appVersion,
+                    password: $password,
+                    hasSavedPassword: certStore.selected.flatMap {
+                        certStore.savedPassword(for: $0)
+                    } != nil,
+                    certificateName: certStore.selected == nil
+                        ? nil
+                        : localized("Certificate", "الشهادة"),
+                    profileName: profileStore.selected?.displayName,
+                    preflightState: preflightState,
+                    isSigning: signer.phase == .signing,
+                    canSign: canSign,
+                    dylibURL: dylibURL,
+                    iconURL: selectedIconURL,
+                    shareURL: signedIPA ?? ipaURL,
+                    removeExtensions: $removeExtensions,
+                    enableDocuments: $enableDocuments,
+                    onChooseIcon: { url in
+                        selectedIconURL = signer.stage(
+                            url,
+                            as: "custom-icon-\(url.lastPathComponent)"
+                        )
+                    },
+                    onChoosePhoto: { item in
+                        guard let item else { return }
+
+                        Task { @MainActor in
+                            if let data = try? await item.loadTransferable(
+                                type: Data.self
+                            ) {
+                                let iconURL = signer.workDir
+                                    .appendingPathComponent("custom-icon.png")
+
+                                try? data.write(
+                                    to: iconURL,
+                                    options: .atomic
+                                )
+
+                                selectedIconURL = iconURL
+                            }
+                        }
+                    },
+                    onChooseCertificate: {
+                        showCertSheet = true
+                    },
+                    onChooseProfile: {
+                        showProfileSheet = true
+                    },
+                    onChooseDylib: { url in
+                        stageDylib(url)
+                    },
+                    onRemoveDylib: {
+                        dylibURL = nil
+                        injectIntoExtensions = false
+                    },
+                    onSignOnly: {
+                        sign(installAfter: false)
+                    },
+                    onSign: {
+                        sign(installAfter: true)
+                    }
+                )
+            }
+            .sheet(isPresented: $showLibrary) {
+                LibraryView { record in
+                    install.install(
+                        ipa: history.outputURL(for: record),
+                        bundleId: record.bundleId,
+                        version: record.version
+                    )
+                }
+                .liquidGlassSheet()
+            }
+            .sheet(isPresented: $showUpdates) {
+                UpdatesSheet()
+                    .liquidGlassSheet()
+            }
+            .onChange(of: install.installStatus, perform: { status in
+                if status.hasPrefix("Install failed") {
+                    if let id = lastRecordID {
+                        history.setInstallState(.failed, for: id)
+                    }
+
+                    repoStore.completeInstallAttempt(
+                        automaticInstallAppID,
+                        error: status
+                    )
+
+                    automaticInstallAppID = nil
+                    automaticInstallAsAdditionalCopy = false
+                }
+            })
+            .task {
+                if let pendingIPA = repoStore.pendingIPA {
+                    await receiveDownloadedRepositoryIPA(pendingIPA)
+                }
+            }
+            .onChange(of: repoStore.pendingIPA) { pendingIPA in
+                guard let pendingIPA else { return }
+
+                Task {
+                    await receiveDownloadedRepositoryIPA(pendingIPA)
+                }
+            }
+            .alert(
+                localized(
+                    "Delete signed library?",
+                    "حذف مكتبة التطبيقات الموقعة؟"
+                ),
+                isPresented: $showCleanupConfirmation
+            ) {
+                Button(
+                    localized("Cancel", "إلغاء"),
+                    role: .cancel
+                ) {}
+
+                Button(
+                    localized("Delete and Clean", "حذف وتنضيف"),
+                    role: .destructive
+                ) {
+                    cleanFilesAndLibrary()
+                }
+            } message: {
+                Text(
+                    localized(
+                        "This removes signed IPA files and their library records. Certificates, profiles, and sources stay safe.",
+                        "سيتم حذف ملفات IPA الموقعة وسجلات المكتبة. الشهادات وملفات الحماية والمصادر لن تتأثر."
+                    )
+                )
+            }
         }
+    }
+
+    // MARK: - NOVA Sign Header
+
+    private var signingHeader: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                T.accent.opacity(0.22),
+                                T.accent.opacity(0.04),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: 48
+                        )
+                    )
+                    .frame(width: 94, height: 94)
+
+                Image(systemName: "signature")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(T.accent)
+                    .frame(width: 62, height: 62)
+                    .glassSurface(.icon, cornerRadius: 20)
+            }
+
+            VStack(spacing: 6) {
+                Text("NOVA SIGN")
+                    .font(
+                        .system(
+                            size: 27,
+                            weight: .bold,
+                            design: .rounded
+                        )
+                    )
+                    .foregroundStyle(T.ink)
+
+                Text(
+                    localized(
+                        "Sign your applications with a clean and simple workflow.",
+                        "وقّع تطبيقاتك بسهولة وبواجهة بسيطة واحترافية."
+                    )
+                )
+                .font(T.sans(12, .medium))
+                .foregroundStyle(T.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 290)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - NOVA Sign Actions
+
+    private var signingActions: some View {
+        VStack(spacing: 14) {
+            signingActionCard(
+                title: localized("Import File", "استيراد ملف"),
+                subtitle: localized(
+                    "Choose an IPA or ZIP file to start signing.",
+                    "اختر ملف IPA أو ZIP للبدء بالتوقيع."
+                ),
+                icon: "square.and.arrow.down",
+                isPrimary: true
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showImportSheet = true
+            }
+
+            signingActionCard(
+                title: localized("Library", "المكتبة"),
+                subtitle: localized(
+                    "Open your signed applications.",
+                    "افتح تطبيقاتك الموقعة."
+                ),
+                icon: "square.stack.3d.up.fill",
+                isPrimary: false
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showLibrary = true
+            }
+        }
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func signingActionCard(
+        title: String,
+        subtitle: String,
+        icon: String,
+        isPrimary: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(
+                        cornerRadius: 17,
+                        style: .continuous
+                    )
+                    .fill(
+                        isPrimary
+                            ? T.accent.opacity(0.13)
+                            : T.surface3
+                    )
+                    .frame(width: 54, height: 54)
+
+                    Image(systemName: icon)
+                        .font(
+                            .system(
+                                size: 20,
+                                weight: .semibold
+                            )
+                        )
+                        .foregroundStyle(
+                            isPrimary
+                                ? T.accent
+                                : T.ink
+                        )
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(T.sans(16, .bold))
+                        .foregroundStyle(T.ink)
+
+                    Text(subtitle)
+                        .font(T.mono(9, .medium))
+                        .foregroundStyle(T.ink3)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.forward")
+                    .font(
+                        .system(
+                            size: 12,
+                            weight: .bold
+                        )
+                    )
+                    .foregroundStyle(
+                        isPrimary
+                            ? T.accent
+                            : T.ink3
+                    )
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 82)
+            .glassSurface(
+                isPrimary ? .button : .card,
+                cornerRadius: 22
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: 22,
+                    style: .continuous
+                )
+                .stroke(
+                    isPrimary
+                        ? T.accent.opacity(0.22)
+                        : T.rule,
+                    lineWidth: AppStroke.hairline
+                )
+            }
+        }
+        .buttonStyle(GlassTactileButtonStyle())
     }
 
     /// Claims one completed repository download, stages it for signing, and
