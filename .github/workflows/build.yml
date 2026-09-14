@@ -1,0 +1,128 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Available Xcode installations:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+
+          XCODE_APP=""
+          if [ -d "/Applications/Xcode_26.6.app" ]; then
+            XCODE_APP="/Applications/Xcode_26.6.app"
+          elif [ -d "/Applications/Xcode.app" ]; then
+            XCODE_APP="/Applications/Xcode.app"
+          else
+            echo "ERROR: Xcode 26 installation was not found."
+            exit 1
+          fi
+
+          sudo xcode-select -s "$XCODE_APP"
+
+          echo "Selected Xcode:"
+          xcodebuild -version
+
+          echo "Selected iPhoneOS SDK:"
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          test -d "iStore.xcodeproj"
+          echo "iStore.xcodeproj generated successfully."
+
+      - name: Check project and schemes
+        run: |
+          set -euo pipefail
+          xcodebuild -project iStore.xcodeproj -list
+
+      - name: Verify iOS 26 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+
+          echo "iPhoneOS SDK:"
+          echo "$SDK_PATH"
+
+          echo "SDK Version:"
+          echo "$SDK_VERSION"
+
+          if [[ ! "$SDK_VERSION" =~ ^26\. ]]; then
+            echo "ERROR: Expected iOS 26 SDK, found: $SDK_VERSION"
+            exit 1
+          fi
+
+          echo "OK: iOS 26 SDK selected."
+
+      - name: Build unsigned archive
+        run: |
+          set -euo pipefail
+
+          rm -rf "$RUNNER_TEMP/iStore.xcarchive"
+
+          xcodebuild             -project iStore.xcodeproj             -scheme iStore             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             -archivePath "$RUNNER_TEMP/iStore.xcarchive"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             archive
+
+      - name: Verify archive
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="$RUNNER_TEMP/iStore.xcarchive"
+          APP="$ARCHIVE/Products/Applications/iStore.app"
+
+          test -d "$ARCHIVE"
+          test -d "$APP"
+
+          echo "Archive:"
+          echo "$ARCHIVE"
+
+          echo "Application:"
+          echo "$APP"
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+
+          rm -rf Payload
+          rm -f iStore-unsigned.ipa
+
+          mkdir -p Payload
+          cp -R             "$RUNNER_TEMP/iStore.xcarchive/Products/Applications/iStore.app"             "Payload/iStore.app"
+
+          zip -qry iStore-unsigned.ipa Payload
+          test -f iStore-unsigned.ipa
+
+          echo "IPA created:"
+          ls -lh iStore-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: iStore-unsigned-ipa
+          path: iStore-unsigned.ipa
+          if-no-files-found: error
