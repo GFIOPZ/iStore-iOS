@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Library tab — persistent history of signed apps with share / reinstall /
-/// delete actions.
+/// Library tab — persistent history of signed apps with reinstall / delete actions.
 struct LibraryView: View {
     @EnvironmentObject private var history: HistoryStore
     @Environment(\.forgeTheme) private var T
@@ -11,7 +10,6 @@ struct LibraryView: View {
     var onInstall: (SigningRecord) -> Void = { _ in }
 
     @State private var activeRecord: SigningRecord?
-    @State private var shareRecord: SigningRecord?
 
     var body: some View {
         NavigationStack {
@@ -43,18 +41,21 @@ struct LibraryView: View {
             }
             .confirmationDialog(
                 activeRecord?.outputName ?? "",
-                isPresented: Binding(get: { activeRecord != nil },
-                                     set: { if !$0 { activeRecord = nil } }),
+                isPresented: Binding(
+                    get: { activeRecord != nil },
+                    set: { if !$0 { activeRecord = nil } }
+                ),
                 presenting: activeRecord
             ) { record in
                 if history.fileExists(for: record) {
-                    Button("Install on Device") { onInstall(record) }
-                    Button("Share / Save IPA") { shareRecord = record }
+                    Button("Install on Device") {
+                        onInstall(record)
+                    }
                 }
-                Button("Delete", role: .destructive) { history.delete(record) }
-            }
-            .sheet(item: $shareRecord) { record in
-                ShareSheet(items: [history.outputURL(for: record)])
+
+                Button("Delete", role: .destructive) {
+                    history.delete(record)
+                }
             }
         }
         .floatingGlassBackButton(action: { dismiss() })
@@ -65,10 +66,16 @@ struct LibraryView: View {
             Image(systemName: "shippingbox")
                 .font(.system(size: 20))
                 .foregroundColor(T.ink3)
+
             Text("No signed apps yet")
                 .font(T.sans(15))
                 .foregroundColor(T.ink)
-            MonoText(text: "Sign an IPA and it will be kept here.", size: 10, color: T.ink3)
+
+            MonoText(
+                text: "Sign an IPA and it will be kept here.",
+                size: 10,
+                color: T.ink3
+            )
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -91,7 +98,12 @@ struct LibraryView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(T.accent2)
                     .frame(width: 38, height: 38)
-                    .fClearGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .fClearGlass(
+                        in: RoundedRectangle(
+                            cornerRadius: 10,
+                            style: .continuous
+                        )
+                    )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(record.outputName)
@@ -99,18 +111,21 @@ struct LibraryView: View {
                         .foregroundColor(T.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
+
                     HStack(spacing: 6) {
                         Text(record.bundleId)
                             .font(T.mono(10, .medium))
                             .foregroundColor(T.ink3)
                             .lineLimit(1)
                             .truncationMode(.middle)
+
                         if !record.version.isEmpty {
                             Text("v\(record.version)")
                                 .font(T.mono(9))
                                 .foregroundColor(T.accent2)
                         }
                     }
+
                     if let certificateCN = record.certificateCN, !certificateCN.isEmpty {
                         Text(certificateCN)
                             .font(T.mono(9))
@@ -124,6 +139,7 @@ struct LibraryView: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     statusPill(record)
+
                     Text(record.date.formatted(date: .abbreviated, time: .shortened))
                         .font(T.mono(9, .medium))
                         .foregroundColor(T.ink4)
