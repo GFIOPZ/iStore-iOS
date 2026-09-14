@@ -430,45 +430,15 @@ private struct ForgeRootView: View {
 // MARK: - Floating Liquid Glass Tab Bar
 
 private struct CustomFloatingTabBar: View {
-
-    @Binding
-    var selectedTab: Int
-
+    @Binding var selectedTab: Int
     let theme: ForgeTheme
 
     var body: some View {
         HStack(spacing: 4) {
-            TabBarButton(
-                id: 0,
-                title: "الرئيسية",
-                icon: "house.fill",
-                selectedTab: $selectedTab,
-                theme: theme
-            )
-
-            TabBarButton(
-                id: 1,
-                title: "التطبيقات",
-                icon: "square.grid.2x2.fill",
-                selectedTab: $selectedTab,
-                theme: theme
-            )
-
-            TabBarButton(
-                id: 2,
-                title: "التوقيع",
-                icon: "signature",
-                selectedTab: $selectedTab,
-                theme: theme
-            )
-
-            TabBarButton(
-                id: 3,
-                title: "الإعدادات",
-                icon: "gearshape.fill",
-                selectedTab: $selectedTab,
-                theme: theme
-            )
+            TabBarButton(id: 0, title: "الرئيسية", icon: "house.fill", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 1, title: "التطبيقات", icon: "square.grid.2x2.fill", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 2, title: "التوقيع", icon: "signature", selectedTab: $selectedTab, theme: theme)
+            TabBarButton(id: 3, title: "الإعدادات", icon: "gearshape.fill", selectedTab: $selectedTab, theme: theme)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
@@ -479,103 +449,66 @@ private struct CustomFloatingTabBar: View {
     }
 }
 
-// MARK: - Tab Button
-
 private struct TabBarButton: View {
-
     let id: Int
     let title: String
     let icon: String
-
-    @Binding
-    var selectedTab: Int
-
+    @Binding var selectedTab: Int
     let theme: ForgeTheme
+    @State private var pressed = false
 
-    @State
-    private var pressed = false
-
-    private var isSelected: Bool {
-        selectedTab == id
-    }
+    private var isSelected: Bool { selectedTab == id }
 
     var body: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
 
-            withAnimation(
-                .spring(
-                    response: 0.34,
-                    dampingFraction: 0.78
-                )
-            ) {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
                 selectedTab = id
             }
 
-            animatePress()
+            withAnimation(.easeOut(duration: 0.10)) {
+                pressed = true
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.68)) {
+                    pressed = false
+                }
+            }
         } label: {
             VStack(spacing: 3) {
                 ZStack {
                     if isSelected {
-                        RoundedRectangle(
-                            cornerRadius: 16,
-                            style: .continuous
-                        )
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    theme.accent.opacity(0.22),
-                                    theme.accent.opacity(0.08)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        theme.accent.opacity(0.22),
+                                        theme.accent.opacity(0.07)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
-                        .overlay {
-                            RoundedRectangle(
-                                cornerRadius: 16,
-                                style: .continuous
-                            )
-                            .stroke(
-                                theme.accent.opacity(0.18),
-                                lineWidth: 0.8
-                            )
-                        }
-                        .frame(width: 50, height: 39)
-                        .transition(
-                            .scale(scale: 0.82)
-                                .combined(with: .opacity)
-                        )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(theme.accent.opacity(0.18), lineWidth: 0.8)
+                            }
+                            .frame(width: 50, height: 39)
+                            .transition(.scale(scale: 0.82).combined(with: .opacity))
                     }
 
                     Image(systemName: icon)
-                        .font(
-                            .system(
-                                size: isSelected ? 18 : 17,
-                                weight: isSelected ? .semibold : .medium
-                            )
-                        )
-                        .foregroundStyle(
-                            isSelected
-                                ? theme.accent
-                                : theme.ink3
-                        )
+                        .font(.system(size: isSelected ? 18 : 17, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? theme.accent : theme.ink3)
                         .scaleEffect(pressed ? 0.88 : 1)
                 }
                 .frame(height: 39)
 
                 Text(title)
-                    .font(
-                        .system(
-                            size: 10,
-                            weight: isSelected ? .semibold : .medium
-                        )
-                    )
-                    .foregroundStyle(
-                        isSelected
-                            ? theme.accent
-                            : theme.ink3
-                    )
+                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? theme.accent : theme.ink3)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
@@ -583,22 +516,5 @@ private struct TabBarButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func animatePress() {
-        withAnimation(.easeOut(duration: 0.10)) {
-            pressed = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            withAnimation(
-                .spring(
-                    response: 0.28,
-                    dampingFraction: 0.68
-                )
-            ) {
-                pressed = false
-            }
-        }
     }
 }
