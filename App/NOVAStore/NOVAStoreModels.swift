@@ -82,17 +82,17 @@ struct NOVAApp: Codable, Identifiable, Hashable {
     }
 
     private static func bool(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys, fallback: Bool) -> Bool {
-        if let value = try? c.decodeIfPresent(Bool.self, forKey: key), let value { return value }
-        if let value = try? c.decodeIfPresent(Int.self, forKey: key), let value { return value != 0 }
-        if let value = try? c.decodeIfPresent(String.self, forKey: key), let value {
+        if let value = try? c.decodeIfPresent(Bool.self, forKey: key) { return value }
+        if let value = try? c.decodeIfPresent(Int.self, forKey: key) { return value != 0 }
+        if let value = try? c.decodeIfPresent(String.self, forKey: key) {
             return ["true", "1", "yes", "on"].contains(value.lowercased())
         }
         return fallback
     }
 
     private static func int(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys, fallback: Int) -> Int {
-        if let value = try? c.decodeIfPresent(Int.self, forKey: key), let value { return value }
-        if let value = try? c.decodeIfPresent(String.self, forKey: key), let value, let number = Int(value) { return number }
+        if let value = try? c.decodeIfPresent(Int.self, forKey: key) { return value }
+        if let value = try? c.decodeIfPresent(String.self, forKey: key), let number = Int(value) { return number }
         return fallback
     }
 }
