@@ -46,7 +46,11 @@ struct NOVAAppsView: View {
     private var exclusiveApps: [RepoApp] {
         var seen = Set<String>()
         return manualApps.apps
-            .filter { $0.enabled }
+            .filter { $0.enabled && $0.showInApps && $0.exclusive }
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.updatedAt > $1.updatedAt
+            }
             .map(RepoApp.init(novaApp:))
             .filter { seen.insert($0.id).inserted }
             .sorted {
@@ -64,7 +68,14 @@ struct NOVAAppsView: View {
             result.append(app)
         }
 
-        for app in exclusiveApps where seen.insert(app.id).inserted {
+        for app in manualApps.apps
+            .filter({ $0.enabled && $0.showInApps })
+            .sorted(by: {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.updatedAt > $1.updatedAt
+            })
+            .map(RepoApp.init(novaApp:))
+            where seen.insert(app.id).inserted {
             result.append(app)
         }
 
