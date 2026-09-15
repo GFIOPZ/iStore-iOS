@@ -10,11 +10,11 @@ extension RepoApp {
     init(novaApp app: NOVAApp) {
         self.name = app.name
         self.bundleIdentifier = app.id
-        self.developerName = nil
+        self.developerName = app.developerName.isEmpty ? nil : app.developerName
         self.localizedDescription = app.description.isEmpty ? nil : app.description
         self.category = app.categoryID.isEmpty ? nil : app.categoryID
         self.iconURL = URL(string: app.icon)
-        self.urlSchemes = []
+        self.urlSchemes = app.urlScheme.isEmpty ? [] : [app.urlScheme]
         self.screenshotURLs = app.screenshots.compactMap(URL.init(string:))
         self.version = app.version.isEmpty ? nil : app.version
         self.downloadURL = URL(string: app.ipaURL)
