@@ -12,24 +12,15 @@ jobs:
     timeout-minutes: 45
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ==================================================
-      # Select Xcode 26
-      # ==================================================
-
-      - name: Select Xcode 26
+      - name: Select installed Xcode 26
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "AVAILABLE XCODE INSTALLATIONS"
-          echo "=========================================="
-
+          echo "Available Xcode installations:"
           ls -d /Applications/Xcode*.app 2>/dev/null || true
 
           XCODE_APP=""
@@ -44,9 +35,7 @@ jobs:
                 2>/dev/null || true
             )
 
-            echo ""
-            echo "Candidate: $candidate"
-            echo "Version:   $version"
+            echo "$candidate -> $version"
 
             if [[ "$version" == 26.* ]]; then
               XCODE_APP="$candidate"
@@ -55,81 +44,68 @@ jobs:
           done
 
           if [ -z "$XCODE_APP" ]; then
-            echo ""
-            echo "ERROR: Xcode 26 was not found."
+            echo "ERROR: No Xcode 26.x installation was found."
             exit 1
           fi
 
-          echo ""
-          echo "=========================================="
-          echo "SELECTING XCODE"
-          echo "=========================================="
-
+          echo "Using:"
           echo "$XCODE_APP"
 
-          sudo xcode-select -s "$XCODE_APP"
+          sudo xcode-select --switch "$XCODE_APP"
 
           echo ""
-          echo "xcode-select:"
-          xcode-select -p
-
-          echo ""
-          echo "Xcode version:"
+          echo "Selected Xcode:"
           xcodebuild -version
 
           echo ""
-          echo "iPhoneOS SDK:"
-          xcrun --sdk iphoneos --show-sdk-version
+          echo "Developer directory:"
+          xcode-select -p
 
-          echo ""
-          echo "iPhoneOS SDK path:"
-          xcrun --sdk iphoneos --show-sdk-path
-
-
-      # ==================================================
-      # Verify Xcode 26
-      # ==================================================
-
-      - name: Verify Xcode 26 and iOS SDK
+      - name: Verify iOS SDK
         shell: bash
         run: |
           set -euo pipefail
 
           XCODE_VERSION="$(xcodebuild -version | head -n 1)"
           SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
 
           echo "Xcode:"
           echo "$XCODE_VERSION"
 
           echo ""
-          echo "iOS SDK:"
+          echo "iPhoneOS SDK:"
           echo "$SDK_VERSION"
 
+          echo ""
+          echo "SDK path:"
+          echo "$SDK_PATH"
+
           if [[ "$XCODE_VERSION" != Xcode\ 26.* ]]; then
-            echo ""
-            echo "ERROR: Xcode 26 is NOT selected."
-            echo "Detected:"
-            echo "$XCODE_VERSION"
+            echo "ERROR: Xcode 26.x is not selected."
             exit 1
           fi
 
           if [[ ! "$SDK_VERSION" =~ ^26\. ]]; then
-            echo ""
-            echo "ERROR: iOS 26 SDK is NOT selected."
-            echo "Detected SDK:"
-            echo "$SDK_VERSION"
+            echo "ERROR: iOS 26 SDK is not selected."
+            echo "Detected SDK: $SDK_VERSION"
             exit 1
           fi
 
           echo ""
-          echo "SUCCESS:"
-          echo "Xcode 26 selected."
-          echo "iOS 26 SDK selected."
+          echo "Xcode 26 + iOS 26 SDK verified."
 
+      - name: Show installed platforms
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      # ==================================================
-      # Install XcodeGen
-      # ==================================================
+          echo "Installed SDKs:"
+          xcodebuild -showsdks
+
+          echo ""
+          echo "iOS device SDK:"
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install XcodeGen
         shell: bash
@@ -140,13 +116,7 @@ jobs:
             brew install xcodegen
           fi
 
-          echo "XcodeGen:"
           xcodegen version
-
-
-      # ==================================================
-      # Generate project
-      # ==================================================
 
       - name: Generate Xcode project
         shell: bash
@@ -157,54 +127,25 @@ jobs:
 
           xcodegen generate
 
-          if [ ! -d "iStore.xcodeproj" ]; then
-            echo "ERROR: Xcode project was not generated."
-            exit 1
-          fi
+          test -d iStore.xcodeproj
 
-          echo ""
-          echo "Project generated:"
-          ls -ld iStore.xcodeproj
+          echo "Project generated successfully."
 
-
-      # ==================================================
-      # Verify generated project
-      # ==================================================
-
-      - name: Verify generated project
+      - name: Verify project
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "XCODE VERSION"
-          echo "=========================================="
-
+          echo "Xcode:"
           xcodebuild -version
 
           echo ""
-          echo "=========================================="
-          echo "PROJECT FORMAT"
-          echo "=========================================="
-
-          grep -E "objectVersion|compatibilityVersion" \
-            iStore.xcodeproj/project.pbxproj || true
-
-          echo ""
-          echo "=========================================="
-          echo "PROJECT TARGETS"
-          echo "=========================================="
-
+          echo "Project:"
           xcodebuild \
             -project iStore.xcodeproj \
             -list
 
-
-      # ==================================================
-      # Build device archive ONLY
-      # ==================================================
-
-      - name: Build unsigned archive
+      - name: Build unsigned IPA archive
         shell: bash
         run: |
           set -euo pipefail
@@ -212,10 +153,6 @@ jobs:
           ARCHIVE_PATH="$RUNNER_TEMP/iStore.xcarchive"
 
           rm -rf "$ARCHIVE_PATH"
-
-          echo "=========================================="
-          echo "BUILDING DEVICE ARCHIVE"
-          echo "=========================================="
 
           xcodebuild \
             -project iStore.xcodeproj \
@@ -231,46 +168,21 @@ jobs:
             ARCHS=arm64 \
             archive
 
-
-      # ==================================================
-      # Verify archive
-      # ==================================================
-
       - name: Verify archive
         shell: bash
         run: |
           set -euo pipefail
 
-          ARCHIVE_PATH="$RUNNER_TEMP/iStore.xcarchive"
-          APP_PATH="$ARCHIVE_PATH/Products/Applications/iStore.app"
+          APP_PATH="$RUNNER_TEMP/iStore.xcarchive/Products/Applications/iStore.app"
 
-          if [ ! -d "$ARCHIVE_PATH" ]; then
-            echo "ERROR: Archive does not exist."
-            exit 1
-          fi
+          test -d "$APP_PATH"
 
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: iStore.app was not found."
-            exit 1
-          fi
-
-          echo "Archive:"
-          echo "$ARCHIVE_PATH"
-
-          echo ""
-          echo "Application:"
+          echo "Archive successfully created:"
           echo "$APP_PATH"
 
-          echo ""
-          echo "Executable architecture:"
           file "$APP_PATH/iStore"
 
-
-      # ==================================================
-      # Create IPA
-      # ==================================================
-
-      - name: Package unsigned IPA
+      - name: Package IPA
         shell: bash
         run: |
           set -euo pipefail
@@ -278,34 +190,17 @@ jobs:
           rm -rf Payload
           rm -f iStore-unsigned.ipa
 
-          mkdir -p Payload
+          mkdir Payload
 
           cp -R \
             "$RUNNER_TEMP/iStore.xcarchive/Products/Applications/iStore.app" \
             Payload/iStore.app
 
-          zip -qry \
-            iStore-unsigned.ipa \
-            Payload
-
-          if [ ! -f "iStore-unsigned.ipa" ]; then
-            echo "ERROR: IPA was not created."
-            exit 1
-          fi
-
-          echo ""
-          echo "=========================================="
-          echo "IPA CREATED"
-          echo "=========================================="
+          zip -qry iStore-unsigned.ipa Payload
 
           ls -lh iStore-unsigned.ipa
 
-
-      # ==================================================
-      # Upload
-      # ==================================================
-
-      - name: Upload unsigned IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: iStore-unsigned-ipa
