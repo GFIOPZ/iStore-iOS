@@ -147,7 +147,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          XCODE_VERSION="$(xcodebuild -version | head -n 1)"
+          # IMPORTANT: capture xcodebuild's full output BEFORE piping to
+          # head. Piping "xcodebuild -version | head -n 1" directly lets
+          # head close the pipe after the first line while xcodebuild is
+          # still trying to write its second line ("Build version ..."),
+          # which raises NSFileHandleOperationException: Broken pipe and
+          # aborts the whole process with exit code 134. Capturing the
+          # full output first avoids the race entirely.
+          XCODE_VERSION_FULL="$(xcodebuild -version)"
+          XCODE_VERSION="$(printf '%s\n' "$XCODE_VERSION_FULL" | head -n 1)"
           SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
           SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
 
