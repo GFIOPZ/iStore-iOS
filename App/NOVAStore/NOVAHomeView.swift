@@ -24,22 +24,32 @@ struct NOVAHomeView: View {
     }
 
     private var latestApps: [RepoApp] {
-        let limit = store.settings?.latestAppsLimit ?? 10
+        let limit = max(0, store.settings?.latestAppsLimit ?? 10)
+        var candidates: [RepoApp] = []
         var seen = Set<String>()
-        var result: [RepoApp] = []
+
+        // لوحة التحكم أولاً: هذه هي أحدث/مخصصة المتجر.
+        let manual = store.apps
+            .filter { $0.enabled && $0.showInHome }
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.updatedAt > $1.updatedAt
+            }
+
+        for app in manual {
+            let repoApp = RepoApp(novaApp: app)
+            if seen.insert(repoApp.id).inserted { candidates.append(repoApp) }
+        }
+
+        // ثم تطبيقات المصادر.
         for repo in repositories.repositories {
             guard let apps = repositories.catalog[repo.id]?.apps else { continue }
             for app in apps where seen.insert(app.id).inserted {
-                result.append(app)
-                if result.count >= max(0, limit) { return result }
+                candidates.append(app)
             }
         }
-        for novaApp in store.apps where novaApp.enabled {
-            guard result.count < max(0, limit) else { break }
-            let app = RepoApp(novaApp: novaApp)
-            if seen.insert(app.id).inserted { result.append(app) }
-        }
-        return result
+
+        return Array(candidates.prefix(limit))
     }
 
     var body: some View {
@@ -184,6 +194,7 @@ struct NOVAHomeView: View {
                         )
                         .onTapGesture {
                             guard dragOffset == .zero else { return }
+                            guard front.openOnTap else { return }
                             Haptics.tap()
                             selectedBanner = front
                         }
@@ -371,20 +382,48 @@ struct NOVAHomeView: View {
 
     @ViewBuilder
     private func bannerDestination(_ banner: NOVABanner) -> some View {
-        if let appID = banner.appID, let app = store.app(id: appID) {
-            RepoAppDetailSheet(app: RepoApp(novaApp: app))
-        } else if !banner.externalURL.isEmpty {
-            BannerExternalDestination(urlString: banner.externalURL)
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("لا يوجد محتوى مرتبط بهذا البنر")
-                    .font(.headline)
+        switch banner.actionType.lowercased() {
+        case "app_open", "open":
+            if let appID = banner.appID, let app = store.app(id: appID) {
+                BannerOpenAppDestination(app: app)
+            } else {
+                bannerFallback
             }
-            .padding()
+
+        case "app_detail", "app", "navigate", "navigation":
+            if let appID = banner.appID, let app = store.app(id: appID) {
+                RepoAppDetailSheet(app: RepoApp(novaApp: app))
+            } else {
+                bannerFallback
+            }
+
+        case "external", "url":
+            if !banner.externalURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                BannerExternalDestination(urlString: banner.externalURL)
+            } else {
+                bannerFallback
+            }
+
+        default:
+            if let appID = banner.appID, let app = store.app(id: appID) {
+                RepoAppDetailSheet(app: RepoApp(novaApp: app))
+            } else if !banner.externalURL.isEmpty {
+                BannerExternalDestination(urlString: banner.externalURL)
+            } else {
+                bannerFallback
+            }
         }
+    }
+
+    private var bannerFallback: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text("لا يوجد محتوى مرتبط بهذا البنر")
+                .font(.headline)
+        }
+        .padding()
     }
 }
 
@@ -586,15 +625,21 @@ private struct BannerCard: View {
                 )
 
                 HStack(alignment: .bottom, spacing: 12) {
-                    if !banner.buttonTitle.isEmpty {
-                        Text(banner.buttonTitle)
-                            .font(.system(size: 13.5, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 9)
-                            .background(brandGradient)
-                            .clipShape(Capsule())
-                            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                    if banner.showButton && !banner.buttonTitle.isEmpty {
+                        Button {
+                            // الزر الحقيقي يتعامل معه Tap على البطاقة نفسها؛ هنا فقط منع لمس الزر من أن يبدو ثابتاً.
+                            Haptics.tap()
+                        } label: {
+                            Text(banner.buttonTitle)
+                                .font(.system(size: 13.5, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 9)
+                                .background(brandGradient)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Spacer(minLength: 6)
@@ -654,6 +699,52 @@ private enum Haptics {
     static func installSoundAndImpact() {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         AudioServicesPlaySystemSound(1407) 
+    }
+}
+
+private struct BannerOpenAppDestination: View {
+    let app: NOVAApp
+    @State private var didAttempt = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            CachedAppIcon(url: URL(string: app.icon), size: 82, cornerRadius: 20)
+
+            Text(app.name)
+                .font(.headline)
+
+            Text("جارٍ فتح التطبيق...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if !app.urlScheme.isEmpty {
+                Button("فتح مرة أخرى") {
+                    openApp()
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Text("لم يتم تعيين URL Scheme لهذا التطبيق، لذلك يمكنك الانتقال إلى صفحة التطبيق.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(24)
+        .navigationTitle("NOVA STORE")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard !didAttempt else { return }
+            didAttempt = true
+            openApp()
+        }
+    }
+
+    private func openApp() {
+        let raw = app.urlScheme.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        let normalized = raw.contains("://") ? raw : raw + "://"
+        guard let url = URL(string: normalized) else { return }
+        UIApplication.shared.open(url)
     }
 }
 
