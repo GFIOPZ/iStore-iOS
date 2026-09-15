@@ -505,13 +505,17 @@ private struct LaserIntroTitleView: View {
                 progress = 1.0
             }
             // تأثير الجليتش (هزة خفيفة عشوائية)
-            Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
-                if progress > 0.1 && progress < 0.9 && Int.random(in: 0...10) > 8 {
-                    glitchOffset = CGFloat.random(in: 3...5)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                        glitchOffset = 0
-                    }
-                }
+            // يستخدم .task بدل Timer لتجنب تحذيرات Swift 6 الخاصة بـ Sendable / MainActor.
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard progress > 0.1 && progress < 0.9 else { continue }
+                guard Int.random(in: 0...10) > 8 else { continue }
+
+                glitchOffset = CGFloat.random(in: 3...5)
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                glitchOffset = 0
             }
         }
     }
