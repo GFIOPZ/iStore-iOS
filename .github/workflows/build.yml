@@ -27,6 +27,7 @@ jobs:
       # ============================================
 
       - name: Select Xcode 26
+        id: select_xcode
         shell: bash
         run: |
           set -euo pipefail
@@ -93,6 +94,35 @@ jobs:
           echo "Selected Xcode:"
           xcodebuild -version
 
+          # Capture the exact Xcode build number (e.g. 17A400) so the
+          # simulator runtime cache key below is tied to this specific
+          # Xcode build. If Xcode ever updates on the runner image, the
+          # cache key changes automatically and we re-download instead
+          # of restoring a stale/mismatched runtime.
+          XCODE_BUILD="$(xcodebuild -version | tail -n 1 | awk '{print $3}')"
+          echo "Xcode build:"
+          echo "$XCODE_BUILD"
+          echo "xcode_build=$XCODE_BUILD" >> "$GITHUB_OUTPUT"
+
+
+      # ============================================
+      # Cache the iOS Simulator runtime
+      # ------------------------------------------------
+      # Downloading the matching simulator runtime (step
+      # below) can take several minutes. Caching it keyed
+      # to the exact Xcode build means later runs restore
+      # it from cache in seconds instead of re-downloading
+      # every time. The cache is invalidated automatically
+      # whenever the runner image's Xcode build changes.
+      # ============================================
+
+      - name: Cache iOS Simulator runtime
+        id: simulator_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: /Library/Developer/CoreSimulator/Profiles/Runtimes
+          key: ios-simulator-runtime-macos26-${{ steps.select_xcode.outputs.xcode_build }}
+
 
       # ============================================
       # Ensure matching iOS Simulator runtime exists
@@ -119,6 +149,8 @@ jobs:
 
       - name: Ensure matching iOS Simulator runtime is installed
         shell: bash
+        env:
+          CACHE_HIT: ${{ steps.simulator_runtime_cache.outputs.cache-hit }}
         run: |
           set -euo pipefail
 
@@ -127,9 +159,15 @@ jobs:
           echo "========================================"
           xcrun simctl runtime list || true
 
-          echo ""
-          echo "Attempting to download the matching iOS platform/runtime..."
-          xcodebuild -downloadPlatform iOS || echo "Download attempt finished (may already be present or unavailable)."
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo ""
+            echo "Cache hit: restored simulator runtime from cache, skipping download."
+          else
+            echo ""
+            echo "Cache miss: downloading the matching iOS platform/runtime..."
+            echo "(this can take several minutes on a cold cache; later runs will be fast)"
+            xcodebuild -downloadPlatform iOS || echo "Download attempt finished (may already be present or unavailable)."
+          fi
 
           echo ""
           echo "========================================"
