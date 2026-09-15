@@ -21,10 +21,17 @@ struct NOVAStartupView<Content: View>: View {
         .task {
             guard !didStart else { return }
             didStart = true
-            async let preload = NOVAStartupPreloader.preload()
+            let preloadTask = Task { await NOVAStartupPreloader.preload() }
+
+            // الشاشة ثابتة 3 ثوانٍ ولا تنتظر الشبكة.
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            _ = await preload
-            withAnimation(.easeOut(duration: 0.35)) { finished = true }
+
+            // يواصل التحميل بالخلفية إذا لم يكتمل بعد.
+            _ = preloadTask
+
+            withAnimation(.easeOut(duration: 0.25)) {
+                finished = true
+            }
         }
     }
 }
