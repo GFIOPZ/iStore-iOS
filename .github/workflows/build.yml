@@ -95,6 +95,50 @@ jobs:
 
 
       # ============================================
+      # Ensure matching iOS Simulator runtime exists
+      # ------------------------------------------------
+      # Even for a DEVICE-ONLY archive build, Xcode's
+      # actool cross-checks installed simulator runtimes
+      # against the iphonesimulator SDK build version.
+      # On some macos-26 runner images the pre-installed
+      # runtimes (e.g. 23C54 / 23E254a / 23F77) do not
+      # match the SDK actool expects, which makes actool
+      # fail the whole archive with:
+      #
+      #   "No simulator runtime version from [...]
+      #    available to use with iphonesimulator SDK
+      #    version ..."
+      #
+      # This is a known runner-image issue
+      # (github.com/actions/runner-images issues
+      # #13317 / #13275). The fix is to make sure a
+      # matching runtime is present on disk before
+      # building, even though we never run on a
+      # simulator ourselves.
+      # ============================================
+
+      - name: Ensure matching iOS Simulator runtime is installed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "SIMULATOR RUNTIMES BEFORE"
+          echo "========================================"
+          xcrun simctl runtime list || true
+
+          echo ""
+          echo "Attempting to download the matching iOS platform/runtime..."
+          xcodebuild -downloadPlatform iOS || echo "Download attempt finished (may already be present or unavailable)."
+
+          echo ""
+          echo "========================================"
+          echo "SIMULATOR RUNTIMES AFTER"
+          echo "========================================"
+          xcrun simctl runtime list || true
+
+
+      # ============================================
       # Verify device SDK
       # ============================================
 
