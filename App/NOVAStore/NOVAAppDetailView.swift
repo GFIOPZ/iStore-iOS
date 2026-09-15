@@ -3,15 +3,10 @@ import SwiftUI
 struct NOVAAppDetailView: View {
     let app: NOVAApp
 
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var repositories: RepositoryStore
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-
-                // MARK: - App Header
-
+            VStack(spacing: 18) {
+                // MARK: - Header
                 VStack(spacing: 12) {
                     AsyncImage(url: URL(string: app.icon)) { phase in
                         switch phase {
@@ -25,6 +20,7 @@ struct NOVAAppDetailView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .padding(28)
+                                .foregroundStyle(.secondary)
 
                         case .empty:
                             ProgressView()
@@ -34,61 +30,20 @@ struct NOVAAppDetailView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .padding(28)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .frame(width: 110, height: 110)
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .frame(width: 108, height: 108)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                     Text(app.name)
-                        .font(.title2.bold())
+                        .font(.title2.weight(.bold))
                         .multilineTextAlignment(.center)
-
-                    if !app.subtitle.isEmpty {
-                        Text(app.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
                 }
-                .padding(.top, 20)
-
-                // MARK: - App Information
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("معلومات التطبيق")
-                        .font(.headline)
-
-                    infoRow(
-                        title: "الإصدار",
-                        value: app.version
-                    )
-
-                    infoRow(
-                        title: "الحجم",
-                        value: app.size
-                    )
-
-                    if !app.categoryID.isEmpty {
-                        infoRow(
-                            title: "التصنيف",
-                            value: app.categoryID
-                        )
-                    }
-
-                    if !app.sourceID.isEmpty {
-                        infoRow(
-                            title: "المصدر",
-                            value: app.sourceID
-                        )
-                    }
-                }
-                .padding()
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .padding(.top, 14)
 
                 // MARK: - Description
-
-                if !app.description.isEmpty {
+                if !app.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("الوصف")
                             .font(.headline)
@@ -97,14 +52,26 @@ struct NOVAAppDetailView: View {
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding()
+                    .padding(16)
                     .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
 
-                // MARK: - Screenshots
+                // MARK: - Version & Size
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("معلومات التطبيق")
+                        .font(.headline)
 
+                    infoRow(title: "الإصدار", value: app.version)
+                    infoRow(title: "الحجم", value: app.size)
+                }
+                .padding(16)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                // MARK: - Screenshots
                 if !app.screenshots.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("صور التطبيق")
@@ -112,14 +79,8 @@ struct NOVAAppDetailView: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(
-                                    Array(app.screenshots.enumerated()),
-                                    id: \.offset
-                                ) { _, screenshot in
-
-                                    AsyncImage(
-                                        url: URL(string: screenshot)
-                                    ) { phase in
+                                ForEach(Array(app.screenshots.enumerated()), id: \.offset) { _, screenshot in
+                                    AsyncImage(url: URL(string: screenshot)) { phase in
                                         switch phase {
                                         case .success(let image):
                                             image
@@ -127,40 +88,25 @@ struct NOVAAppDetailView: View {
                                                 .scaledToFill()
 
                                         case .failure:
-                                            RoundedRectangle(
-                                                cornerRadius: 16
-                                            )
-                                            .fill(.gray.opacity(0.15))
-                                            .overlay {
-                                                Image(
-                                                    systemName: "photo"
-                                                )
-                                                .font(.title)
-                                                .foregroundStyle(.secondary)
-                                            }
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(.gray.opacity(0.15))
+                                                .overlay {
+                                                    Image(systemName: "photo")
+                                                        .font(.title)
+                                                        .foregroundStyle(.secondary)
+                                                }
 
                                         case .empty:
-                                            RoundedRectangle(
-                                                cornerRadius: 16
-                                            )
-                                            .fill(.gray.opacity(0.15))
-                                            .overlay {
-                                                ProgressView()
-                                            }
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(.gray.opacity(0.15))
+                                                .overlay { ProgressView() }
 
                                         @unknown default:
                                             EmptyView()
                                         }
                                     }
-                                    .frame(
-                                        width: 220,
-                                        height: 390
-                                    )
-                                    .clipShape(
-                                        RoundedRectangle(
-                                            cornerRadius: 16
-                                        )
-                                    )
+                                    .frame(width: 220, height: 390)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
                             }
                         }
@@ -168,36 +114,21 @@ struct NOVAAppDetailView: View {
                 }
 
                 // MARK: - Download
-
-                if !app.ipaURL.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ).isEmpty,
-                   let downloadURL = URL(
-                    string: app.ipaURL
-                   ) {
-
+                if let downloadURL = URL(string: app.ipaURL),
+                   !app.ipaURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Link(destination: downloadURL) {
                         HStack {
                             Image(systemName: "arrow.down.circle.fill")
-
                             Text("تحميل التطبيق")
-
                             Spacer()
-
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "chevron.left")
                         }
                         .font(.headline)
                         .padding()
                         .frame(maxWidth: .infinity)
-                        .background(
-                            Color.accentColor
-                        )
+                        .background(Color.accentColor)
                         .foregroundStyle(.white)
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 16
-                            )
-                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 } else {
                     Text("رابط التحميل غير متوفر حالياً")
@@ -206,11 +137,7 @@ struct NOVAAppDetailView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(.thinMaterial)
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 16
-                            )
-                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
             .padding()
@@ -219,13 +146,8 @@ struct NOVAAppDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: - Info Row
-
     @ViewBuilder
-    private func infoRow(
-        title: String,
-        value: String
-    ) -> some View {
+    private func infoRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
                 .foregroundStyle(.secondary)
