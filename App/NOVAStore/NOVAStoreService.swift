@@ -20,6 +20,15 @@ final class NOVAStoreService: ObservableObject {
 
     func refresh(force: Bool = false) async {
         guard !loaded || force else { return }
+
+        // إذا كان الـ preload شغالاً، لا نبدأ طلبات ثانية لنفس البيانات.
+        if isLoading {
+            while isLoading && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            return
+        }
+
         guard NOVAAuthService.shared.isLoggedIn else {
             errorMessage = "يجب تسجيل الدخول أولاً."
             return
@@ -31,37 +40,47 @@ final class NOVAStoreService: ObservableObject {
 
         var failures: [String] = []
 
-        do {
-            let value: NOVAAppsResponse = try await fetch("apps.json")
-            apps = value.apps
-                .filter { $0.enabled }
-                .sorted {
-                    if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
-                    return $0.updatedAt > $1.updatedAt
-                }
-        } catch { failures.append("apps.json") }
+        // تحميل ملفات المتجر بالتوازي حتى يكون الـ preload فعلياً سريعاً.
+        async let appsResult: Result<NOVAAppsResponse, Error> = fetchResult("apps.json")
+        async let bannersResult: Result<NOVABannersResponse, Error> = fetchResult("banners.json")
+        async let categoriesResult: Result<NOVACategoriesResponse, Error> = fetchResult("categories.json")
+        async let sourcesResult: Result<NOVASourcesResponse, Error> = fetchResult("sources.json")
+        async let settingsResult: Result<NOVASettingsResponse, Error> = fetchResult("settings.json")
 
-        do {
-            let value: NOVABannersResponse = try await fetch("banners.json")
-            banners = value.banners
-                .filter { $0.enabled }
-                .sorted { $0.sortOrder < $1.sortOrder }
-        } catch { failures.append("banners.json") }
+        let appsValue = await appsResult
+        switch appsValue {
+        case .success(let value):
+            apps = value.apps.filter { $0.enabled }.sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.updatedAt > $1.updatedAt
+            }
+        case .failure: failures.append("apps.json")
+        }
 
-        do {
-            let value: NOVACategoriesResponse = try await fetch("categories.json")
-            categories = value.categories.filter { $0.enabled }
-        } catch { failures.append("categories.json") }
+        let bannersValue = await bannersResult
+        switch bannersValue {
+        case .success(let value):
+            banners = value.banners.filter { $0.enabled }.sorted { $0.sortOrder < $1.sortOrder }
+        case .failure: failures.append("banners.json")
+        }
 
-        do {
-            let value: NOVASourcesResponse = try await fetch("sources.json")
-            sources = value.sources.filter { $0.enabled && $0.showInStore }
-        } catch { failures.append("sources.json") }
+        let categoriesValue = await categoriesResult
+        switch categoriesValue {
+        case .success(let value): categories = value.categories.filter { $0.enabled }
+        case .failure: failures.append("categories.json")
+        }
 
-        do {
-            let value: NOVASettingsResponse = try await fetch("settings.json")
-            settings = value.store
-        } catch { failures.append("settings.json") }
+        let sourcesValue = await sourcesResult
+        switch sourcesValue {
+        case .success(let value): sources = value.sources.filter { $0.enabled && $0.showInStore }
+        case .failure: failures.append("sources.json")
+        }
+
+        let settingsValue = await settingsResult
+        switch settingsValue {
+        case .success(let value): settings = value.store
+        case .failure: failures.append("settings.json")
+        }
 
         loaded = true
 
@@ -77,6 +96,11 @@ final class NOVAStoreService: ObservableObject {
     func app(id: String?) -> NOVAApp? {
         guard let id, !id.isEmpty else { return nil }
         return apps.first { $0.id == id }
+    }
+
+    private func fetchResult<T: Decodable>(_ filename: String) async -> Result<T, Error> {
+        do { return .success(try await fetch(filename)) }
+        catch { return .failure(error) }
     }
 
     private func fetch<T: Decodable>(_ filename: String) async throws -> T {
