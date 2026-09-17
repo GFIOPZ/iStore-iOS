@@ -535,34 +535,55 @@ struct ContentView: View {
         Button {
             showCertSheet = true
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "key.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(T.isDark ? .white : T.ink)
-                    .frame(width: 40, height: 40)
-                    .fClearGlass(in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(
+                        cornerRadius: 17,
+                        style: .continuous
+                    )
+                    .fill(T.accent.opacity(T.isDark ? 0.24 : 0.13))
+                    .frame(width: 54, height: 54)
 
-                VStack(alignment: .leading, spacing: 3) {
+                    Image(systemName: "key.fill")
+                        .font(
+                            .system(
+                                size: 20,
+                                weight: .semibold
+                            )
+                        )
+                        .foregroundStyle(T.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(certStore.selected == nil
                          ? localized("Import Certificate", "استيراد شهادة")
                          : localized("Certificate", "الشهادة"))
-                        .font(T.sans(17, .bold))
-                        .foregroundColor(T.isDark ? .white : T.ink)
+                        .font(T.sans(16, .bold))
+                        .foregroundStyle(T.ink)
                         .lineLimit(1)
                 }
 
                 Spacer(minLength: 8)
+
+                Image(systemName: "chevron.forward")
+                    .font(
+                        .system(
+                            size: 12,
+                            weight: .bold
+                        )
+                    )
+                    .foregroundStyle(T.accent)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 66)
+            .frame(minHeight: 78)
             .contentShape(Rectangle())
-            .foregroundColor(T.ink)
+            .foregroundStyle(T.ink)
             .glassSurface(.button, cornerRadius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(T.rule, lineWidth: AppStroke.hairline)
+                    .stroke(T.accent.opacity(T.isDark ? 0.35 : 0.18), lineWidth: AppStroke.hairline)
             }
         }
         .buttonStyle(GlassTactileButtonStyle())
