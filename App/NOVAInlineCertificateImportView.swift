@@ -13,6 +13,7 @@ struct NOVAInlineCertificateImportView: View {
     }
 
     @State private var showFileImporter = false
+    @State private var showProfileStep = false
     @State private var importStage: ImportStage = .p12
     @State private var showPasswordSheet = false
     @State private var showInfoSheet = false
@@ -24,6 +25,12 @@ struct NOVAInlineCertificateImportView: View {
     @State private var profileData: Data?
     @State private var profileFilename = "profile.mobileprovision"
     @State private var certificatePassword = "1"
+
+    private static let p12UTType =
+        UTType(filenameExtension: "p12") ?? .data
+
+    private static let mobileProvisionUTType =
+        UTType(filenameExtension: "mobileprovision") ?? .data
 
     var body: some View {
         Button {
@@ -98,10 +105,16 @@ struct NOVAInlineCertificateImportView: View {
         // second importer to replace/intercept the first presentation.
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.data],
+            allowedContentTypes: importStage == .p12
+                ? [Self.p12UTType]
+                : [Self.mobileProvisionUTType],
             allowsMultipleSelection: false
         ) { result in
             handleFileResult(result)
+        }
+        .sheet(isPresented: $showProfileStep) {
+            profileStepSheet
+                .liquidGlassSheet()
         }
         .sheet(isPresented: $showPasswordSheet) {
             NOVACertificatePasswordSheet(
@@ -155,6 +168,52 @@ struct NOVAInlineCertificateImportView: View {
         }
     }
 
+    private var profileStepSheet: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 44, weight: .semibold))
+                .foregroundStyle(T.accent)
+
+            Text("تم اختيار ملف P12")
+                .font(T.sans(20, .bold))
+                .foregroundStyle(T.ink)
+
+            Text("الآن اختر ملف Provisioning Profile بامتداد .mobileprovision")
+                .font(T.mono(11, .medium))
+                .foregroundStyle(T.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+
+            Button {
+                showProfileStep = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    importStage = .profile
+                    showFileImporter = true
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "doc.badge.plus")
+                    Text("اختيار ملف البروفايل")
+                }
+                .font(T.sans(16, .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(T.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Button("إلغاء", role: .cancel) {
+                showProfileStep = false
+                resetPending()
+            }
+            .font(T.sans(14, .medium))
+            .foregroundStyle(T.ink3)
+        }
+        .padding(24)
+    }
+
     // MARK: - File Import
 
     private func handleFileResult(_ result: Result<[URL], Error>) {
@@ -182,27 +241,22 @@ struct NOVAInlineCertificateImportView: View {
 
         do {
             let data = try Data(contentsOf: url)
-            let extensionName = url.pathExtension.lowercased()
-
             switch importStage {
             case .p12:
-                guard extensionName == "p12" else {
+                guard !data.isEmpty else {
                     throw ImportError.invalidP12
                 }
 
                 p12Data = data
                 p12Filename = url.lastPathComponent
 
-                // Wait until the first document picker has completely closed,
-                // then present the second one.
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(350))
-                    importStage = .profile
-                    showFileImporter = true
-                }
+                // Do not stack another document picker immediately.
+                // Show a clear second step so the user knows exactly what to choose.
+                importStage = .profile
+                showProfileStep = true
 
             case .profile:
-                guard extensionName == "mobileprovision" else {
+                guard !data.isEmpty else {
                     throw ImportError.invalidProfile
                 }
 
