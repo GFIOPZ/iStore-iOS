@@ -5,6 +5,7 @@ struct NOVAInlineCertificateImportView: View {
     @EnvironmentObject private var certStore: CertificateStore
     @EnvironmentObject private var profileStore: ProfileStore
     @Environment(\.forgeTheme) private var T
+    @AppStorage("app.language") private var languageCode = AppLanguage.english.rawValue
 
     @State private var showP12Importer = false
     @State private var showProfileImporter = false
@@ -100,8 +101,14 @@ struct NOVAInlineCertificateImportView: View {
             .liquidGlassSheet()
         }
         .sheet(isPresented: $showInfoSheet) {
-            NOVACertificateInfoSheet()
+            if let certificate = certStore.selected {
+                NOVACertificateInfoSheet(
+                    certificate: certificate,
+                    profile: profileStore.selected,
+                    languageCode: languageCode
+                )
                 .liquidGlassSheet()
+            }
         }
         .confirmationDialog(
             "الشهادة",
@@ -229,7 +236,8 @@ struct NOVAInlineCertificateImportView: View {
         certificatePassword = "1"
     }
 
-    private func certificateValidityText(_ date: Date) -> String {
+    private func certificateValidityText(_ date: Date?) -> String {
+        guard let date else { return "المدة غير متوفرة" }
         let days = Calendar.current.dateComponents([.day], from: .now, to: date).day ?? 0
         if days <= 0 { return "منتهية الصلاحية" }
         return "متبقي \(days) يوم"
