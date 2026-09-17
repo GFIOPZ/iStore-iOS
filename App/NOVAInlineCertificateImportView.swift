@@ -198,26 +198,32 @@ struct NOVAInlineCertificateImportView: View {
         showPasswordSheet = false
 
         Task { @MainActor in
-            do {
-                let certificate = try certStore.importRemoteCertificate(
-                    data: p12Data,
-                    filename: p12Filename,
-                    password: finalPassword
+            let certificateResult = certStore.importRemoteCertificate(
+                data: p12Data,
+                filename: p12Filename,
+                password: finalPassword
+            )
+
+            switch certificateResult {
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                return
+
+            case .success(let certificate):
+                let profileResult = profileStore.importRemoteProfile(
+                    data: profileData,
+                    filename: profileFilename
                 )
 
-                do {
-                    _ = try profileStore.importRemoteProfile(
-                        data: profileData,
-                        filename: profileFilename
-                    )
-                } catch {
-                    certStore.delete(certificate)
-                    throw error
-                }
+                switch profileResult {
+                case .success:
+                    resetPending()
 
-                resetPending()
-            } catch {
-                errorMessage = error.localizedDescription
+                case .failure(let error):
+                    // Roll back the certificate if the profile cannot be imported.
+                    certStore.delete(certificate)
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
