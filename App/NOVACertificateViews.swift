@@ -87,6 +87,7 @@ struct NOVACertificateInfoSheet: View {
     let languageCode: String
 
     @Environment(\.forgeTheme) private var T
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -179,7 +180,7 @@ struct NOVACertificateInfoSheet: View {
             .background { ForgeBackdrop() }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("تم") {}
+                    Button("تم") { dismiss() }
                         .foregroundStyle(T.accent)
                 }
             }
