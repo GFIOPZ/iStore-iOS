@@ -324,7 +324,7 @@ struct ContentView: View {
                 showImportSheet = true
             }
 
-            NOVAInlineCertificateImportView()
+            certificateSection
 
             signingActionCard(
                 title: localized("Library", "المكتبة"),
