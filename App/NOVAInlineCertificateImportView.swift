@@ -7,8 +7,13 @@ struct NOVAInlineCertificateImportView: View {
     @Environment(\.forgeTheme) private var T
     @AppStorage("app.language") private var languageCode = AppLanguage.english.rawValue
 
-    @State private var showP12Importer = false
-    @State private var showProfileImporter = false
+    private enum ImportStage {
+        case p12
+        case profile
+    }
+
+    @State private var showFileImporter = false
+    @State private var importStage: ImportStage = .p12
     @State private var showPasswordSheet = false
     @State private var showInfoSheet = false
     @State private var showActions = false
@@ -23,8 +28,10 @@ struct NOVAInlineCertificateImportView: View {
     var body: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
             if certStore.selected == nil {
-                showP12Importer = true
+                importStage = .p12
+                showFileImporter = true
             } else {
                 showActions = true
             }
@@ -34,16 +41,25 @@ struct NOVAInlineCertificateImportView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(T.accent.opacity(0.13))
                         .frame(width: 52, height: 52)
-                    Image(systemName: certStore.selected == nil ? "key.fill" : "checkmark.seal.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(T.accent)
+
+                    Image(
+                        systemName: certStore.selected == nil
+                            ? "key.fill"
+                            : "checkmark.seal.fill"
+                    )
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(T.accent)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(certStore.selected == nil ? "استيراد شهادة" : (certStore.selected?.displayName ?? "الشهادة"))
-                        .font(T.sans(16, .bold))
-                        .foregroundStyle(T.ink)
-                        .lineLimit(1)
+                    Text(
+                        certStore.selected == nil
+                            ? "استيراد شهادة"
+                            : (certStore.selected?.displayName ?? "الشهادة")
+                    )
+                    .font(T.sans(16, .bold))
+                    .foregroundStyle(T.ink)
+                    .lineLimit(1)
 
                     if let cert = certStore.selected {
                         Text(certificateValidityText(cert.notAfter))
@@ -54,10 +70,12 @@ struct NOVAInlineCertificateImportView: View {
                         Text("اختر ملف P12 وملف البروفايل")
                             .font(T.mono(10, .medium))
                             .foregroundStyle(T.ink3)
+                            .lineLimit(1)
                     }
                 }
 
                 Spacer(minLength: 8)
+
                 Image(systemName: "chevron.left")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(T.ink3)
@@ -74,19 +92,16 @@ struct NOVAInlineCertificateImportView: View {
         .buttonStyle(GlassTactileButtonStyle())
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity)
+
+        // IMPORTANT: use ONE fileImporter for both files.
+        // Multiple fileImporter modifiers on the same view can cause the
+        // second importer to replace/intercept the first presentation.
         .fileImporter(
-            isPresented: $showP12Importer,
+            isPresented: $showFileImporter,
             allowedContentTypes: [.data],
             allowsMultipleSelection: false
         ) { result in
-            handleP12Result(result)
-        }
-        .fileImporter(
-            isPresented: $showProfileImporter,
-            allowedContentTypes: [.data],
-            allowsMultipleSelection: false
-        ) { result in
-            handleProfileResult(result)
+            handleFileResult(result)
         }
         .sheet(isPresented: $showPasswordSheet) {
             NOVACertificatePasswordSheet(
@@ -118,9 +133,11 @@ struct NOVAInlineCertificateImportView: View {
             Button("عرض معلومات الشهادة") {
                 showInfoSheet = true
             }
+
             Button("مسح الشهادة", role: .destructive) {
                 deleteCertificate()
             }
+
             Button("إلغاء", role: .cancel) { }
         }
         .alert(
@@ -130,63 +147,89 @@ struct NOVAInlineCertificateImportView: View {
                 set: { if !$0 { errorMessage = nil } }
             )
         ) {
-            Button("حسناً", role: .cancel) { errorMessage = nil }
+            Button("حسناً", role: .cancel) {
+                errorMessage = nil
+            }
         } message: {
             Text(errorMessage ?? "حدث خطأ غير معروف.")
         }
     }
 
-    private func handleP12Result(_ result: Result<[URL], Error>) {
+    // MARK: - File Import
+
+    private func handleFileResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            do {
-                let data = try Data(contentsOf: url)
-                guard url.pathExtension.lowercased() == "p12" else {
+            readSelectedFile(url)
+
+        case .failure(let error):
+            if (error as NSError).code != NSUserCancelledError {
+                errorMessage = importStage == .p12
+                    ? "تعذر اختيار ملف P12."
+                    : "تعذر اختيار ملف البروفايل."
+            }
+        }
+    }
+
+    private func readSelectedFile(_ url: URL) {
+        let isAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if isAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let extensionName = url.pathExtension.lowercased()
+
+            switch importStage {
+            case .p12:
+                guard extensionName == "p12" else {
                     throw ImportError.invalidP12
                 }
+
                 p12Data = data
                 p12Filename = url.lastPathComponent
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    showProfileImporter = true
-                }
-            } catch {
-                errorMessage = "تعذر قراءة ملف P12."
-            }
-        case .failure(let error):
-            if (error as NSError).code != NSUserCancelledError {
-                errorMessage = "تعذر اختيار ملف P12."
-            }
-        }
-    }
 
-    private func handleProfileResult(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            do {
-                let data = try Data(contentsOf: url)
-                guard url.pathExtension.lowercased() == "mobileprovision" else {
+                // Wait until the first document picker has completely closed,
+                // then present the second one.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    importStage = .profile
+                    showFileImporter = true
+                }
+
+            case .profile:
+                guard extensionName == "mobileprovision" else {
                     throw ImportError.invalidProfile
                 }
+
                 profileData = data
                 profileFilename = url.lastPathComponent
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    certificatePassword = "1"
+                certificatePassword = "1"
+
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
                     showPasswordSheet = true
                 }
-            } catch {
-                errorMessage = "تعذر قراءة ملف البروفايل."
             }
-        case .failure(let error):
-            if (error as NSError).code != NSUserCancelledError {
-                errorMessage = "تعذر اختيار ملف البروفايل."
-            }
+        } catch let error as ImportError {
+            errorMessage = error.localizedDescription
+        } catch {
+            errorMessage = importStage == .p12
+                ? "تعذر قراءة ملف P12."
+                : "تعذر قراءة ملف البروفايل."
         }
     }
 
+    // MARK: - Import
+
     private func importCertificate() {
-        let finalPassword = certificatePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let finalPassword = certificatePassword
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
             ? "1"
             : certificatePassword
 
@@ -207,7 +250,6 @@ struct NOVAInlineCertificateImportView: View {
             switch certificateResult {
             case .failure(let error):
                 errorMessage = error.localizedDescription
-                return
 
             case .success(let certificate):
                 let profileResult = profileStore.importRemoteProfile(
@@ -220,7 +262,7 @@ struct NOVAInlineCertificateImportView: View {
                     resetPending()
 
                 case .failure(let error):
-                    // Roll back the certificate if the profile cannot be imported.
+                    // Roll back only the certificate imported by this operation.
                     certStore.delete(certificate)
                     errorMessage = error.localizedDescription
                 }
@@ -228,10 +270,12 @@ struct NOVAInlineCertificateImportView: View {
         }
     }
 
+    // MARK: - Certificate Actions
+
     private func deleteCertificate() {
-        if let selected = certStore.selected {
-            certStore.delete(selected)
-        }
+        guard let selected = certStore.selected else { return }
+        certStore.delete(selected)
+        resetPending()
     }
 
     private func resetPending() {
@@ -240,12 +284,26 @@ struct NOVAInlineCertificateImportView: View {
         p12Filename = "certificate.p12"
         profileFilename = "profile.mobileprovision"
         certificatePassword = "1"
+        importStage = .p12
     }
 
+    // MARK: - Helpers
+
     private func certificateValidityText(_ date: Date?) -> String {
-        guard let date else { return "المدة غير متوفرة" }
-        let days = Calendar.current.dateComponents([.day], from: .now, to: date).day ?? 0
-        if days <= 0 { return "منتهية الصلاحية" }
+        guard let date else {
+            return "المدة غير متوفرة"
+        }
+
+        let days = Calendar.current.dateComponents(
+            [.day],
+            from: .now,
+            to: date
+        ).day ?? 0
+
+        if days <= 0 {
+            return "منتهية الصلاحية"
+        }
+
         return "متبقي \(days) يوم"
     }
 
@@ -255,8 +313,10 @@ struct NOVAInlineCertificateImportView: View {
 
         var errorDescription: String? {
             switch self {
-            case .invalidP12: return "الملف المختار ليس ملف P12 صالحاً."
-            case .invalidProfile: return "الملف المختار ليس Provisioning Profile صالحاً."
+            case .invalidP12:
+                return "الملف المختار ليس ملف P12 صالحاً."
+            case .invalidProfile:
+                return "الملف المختار ليس Provisioning Profile صالحاً."
             }
         }
     }
