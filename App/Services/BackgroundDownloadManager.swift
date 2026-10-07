@@ -153,19 +153,27 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         }
     }
 
-    private func getOrCacheStoreLogo() -> URL? {
+    private func createNotificationAttachment(for appId: String, percentage: Int) -> UNNotificationAttachment? {
         let tempDir = FileManager.default.temporaryDirectory
-        let logoFile = tempDir.appendingPathComponent("nova_store_logo.png")
-        if FileManager.default.fileExists(atPath: logoFile.path) {
-            return logoFile
+        let uniqueName = "notif_\(appId)_\(percentage)_\(UUID().uuidString.prefix(4)).png"
+        let targetFile = tempDir.appendingPathComponent(uniqueName)
+        
+        var iconData: Data? = nil
+        if let customPath = cachedIconPaths[appId],
+           let d = try? Data(contentsOf: customPath), !d.isEmpty {
+            iconData = d
+        } else if let img = UIImage(named: "NOVAStoreLogo") ?? UIImage(named: "AppIcon") {
+            iconData = img.pngData()
         }
-        if let image = UIImage(named: "NOVAStoreLogo") ?? UIImage(named: "AppIcon") {
-            if let data = image.pngData() {
-                try? data.write(to: logoFile, options: .atomic)
-                return logoFile
-            }
-        }
-        return nil
+        
+        guard let data = iconData, !data.isEmpty else { return nil }
+        guard (try? data.write(to: targetFile, options: .atomic)) != nil else { return nil }
+        
+        let options: [AnyHashable: Any] = [
+            UNNotificationAttachmentOptionsTypeHintKey: "public.png",
+            UNNotificationAttachmentOptionsThumbnailHiddenKey: false
+        ]
+        return try? UNNotificationAttachment(identifier: "att_\(appId)_\(percentage)", url: targetFile, options: options)
     }
 
     // MARK: - Notifications
@@ -198,10 +206,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
             content.body = "\u{200E}\(bar)  \(percentage)%\nجارٍ الاتصال واستلام البيانات..."
         }
 
-        let iconPath = cachedIconPaths[appId] ?? getOrCacheStoreLogo()
-        if let iconPath = iconPath,
-           FileManager.default.fileExists(atPath: iconPath.path),
-           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)_\(percentage)", url: iconPath, options: nil) {
+        if let attachment = createNotificationAttachment(for: appId, percentage: percentage) {
             content.attachments = [attachment]
         }
 
@@ -226,10 +231,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         content.body = "تم تنزيل التطبيق بنجاح وهو الآن جاهز للتوقيع والتثبيت."
         content.sound = .default
 
-        let iconPath = cachedIconPaths[appId] ?? getOrCacheStoreLogo()
-        if let iconPath = iconPath,
-           FileManager.default.fileExists(atPath: iconPath.path),
-           let attachment = try? UNNotificationAttachment(identifier: "icon_done_\(appId)", url: iconPath, options: nil) {
+        if let attachment = createNotificationAttachment(for: appId, percentage: 100) {
             content.attachments = [attachment]
         }
 
