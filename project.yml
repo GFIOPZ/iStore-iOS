@@ -45,7 +45,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: NOVA.STORE.COM
-        PRODUCT_NAME: NOVA STORE
+        PRODUCT_NAME: iStore
 
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: NO
