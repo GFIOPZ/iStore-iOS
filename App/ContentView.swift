@@ -54,10 +54,7 @@ struct ContentView: View {
                 ForgeBackdrop()
                     .ignoresSafeArea()
 
-                DownloadNotificationOverlay()
-                    .zIndex(999)
-
-                ScrollView {
+                                ScrollView {
                     VStack(spacing: 0) {
                         signingHeader
                             .padding(.top, 28)

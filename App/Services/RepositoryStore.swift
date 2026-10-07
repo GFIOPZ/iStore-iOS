@@ -445,41 +445,34 @@ final class RepositoryStore: ObservableObject {
         pendingAppName = app.name
         pendingInstallAsAdditionalCopy = asAdditionalCopy
         downloadError = nil
-        defer { if activeDownloadID == app.id { activeDownloadID = nil } }
-        do {
-            // Streams to a temp file — safe for large IPAs (no full in-memory load).
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 300
-            let (tempURL, resp) = try await URLSession.shared.download(for: request)
-            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                let message = "Download failed — the server returned an error."
-                downloadError = message
-                completeInstallAttempt(app.id, error: message)
-                return
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            BackgroundDownloadManager.shared.startDownload(
+                url: url,
+                appId: app.id,
+                appName: app.name,
+                iconURL: app.iconURL
+            ) { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self = self else {
+                        continuation.resume()
+                        return
+                    }
+                    self.activeDownloadID = nil
+                    switch result {
+                    case .success(let destURL):
+                        self.pendingIPA = destURL
+                    case .failure(let error):
+                        let message = error.localizedDescription
+                        self.downloadError = message
+                        self.completeInstallAttempt(app.id, error: message)
+                    }
+                    continuation.resume()
+                }
             }
-            // Never reuse the previous path: iOS can still be reading the old
-            // served IPA while the user retries after deleting the app. A unique
-            // destination also guarantees pendingIPA emits a new value.
-            let baseName = (Self.ipaName(for: app) as NSString).deletingPathExtension
-            let destination = downloadsDir.appendingPathComponent(
-                "\(baseName)-\(UUID().uuidString).ipa"
-            )
-            // A cross-volume move can become a large copy. Keep it away from
-            // the main actor so the app remains responsive when downloads end.
-            try await Task.detached(priority: .utility) {
-                let fileManager = FileManager.default
-                try? fileManager.removeItem(at: destination)
-                try fileManager.moveItem(at: tempURL, to: destination)
-            }.value
-            pendingIPA = destination
-        } catch {
-            let message = error.localizedDescription
-            downloadError = message
-            completeInstallAttempt(app.id, error: message)
         }
     }
 
-    /// A safe on-disk filename like `AppName-1.2.3.ipa`.
     private static func ipaName(for app: RepoApp) -> String {
         let base = app.name.isEmpty ? app.id : app.name
         let stem = base.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")

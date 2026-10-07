@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 import AudioToolbox
+import UserNotifications
 
 public enum DownloadStatus: Equatable, Sendable {
     case queued
@@ -34,14 +35,21 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
     private var urlSession: URLSession!
     private var tasksToAppIds: [Int: String] = [:]
     private var completionHandlers: [String: (Result<URL, Error>) -> Void] = [:]
+    private var lastNotifiedProgress: [String: Int] = [:]
 
     override private init() {
         super.init()
-        let config = URLSessionConfiguration.background(withIdentifier: "com.novastore.backgroundDownload")
+        let config = URLSessionConfiguration.background(withIdentifier: "com.istore.backgroundDownload")
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
         config.shouldUseExtendedBackgroundIdleMode = true
         self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+
+        requestNotificationPermission()
+    }
+
+    public func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     public func startDownload(
@@ -51,7 +59,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         iconURL: URL? = nil,
         completion: ((Result<URL, Error>) -> Void)? = nil
     ) {
-        // Cancel existing task for this app if any
+        requestNotificationPermission()
         cancelDownload(appId: appId)
 
         if let completion = completion {
@@ -65,6 +73,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
             status: .downloading(progress: 0.01, bytesWritten: 0, totalBytes: 0)
         )
         activeDownloads[appId] = download
+        lastNotifiedProgress[appId] = 0
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 600
@@ -73,6 +82,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         task.resume()
 
         HapticFeedback.light()
+        sendProgressNotification(for: appId, appName: appName, percentage: 1)
     }
 
     public func cancelDownload(appId: String) {
@@ -84,6 +94,39 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         }
         activeDownloads.removeValue(forKey: appId)
         completionHandlers.removeValue(forKey: appId)
+        lastNotifiedProgress.removeValue(forKey: appId)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["dl_\(appId)"])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["dl_\(appId)"])
+    }
+
+    // MARK: - Notifications
+
+    private func sendProgressNotification(for appId: String, appName: String, percentage: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = "جارٍ تحميل \(appName)"
+        content.body = "نسبة التقدم: \(percentage)%"
+        content.sound = nil
+
+        let request = UNNotificationRequest(
+            identifier: "dl_\(appId)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    private func sendCompletionNotification(for appId: String, appName: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "اكتمل التحميل بنجاح!"
+        content.body = "تم تنزيل \(appName). اضغط لفتح التطبيق وتثبيته."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "dl_\(appId)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 
     // MARK: - URLSessionDownloadDelegate
@@ -100,6 +143,8 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
             ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
             : 0.0
 
+        let percentage = Int(progress * 100)
+
         Task { @MainActor in
             guard let appId = self.tasksToAppIds[taskId],
                   var item = self.activeDownloads[appId] else { return }
@@ -110,6 +155,12 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
                 totalBytes: totalBytesExpectedToWrite
             )
             self.activeDownloads[appId] = item
+
+            let last = self.lastNotifiedProgress[appId] ?? 0
+            if percentage >= last + 10 || (percentage > 0 && last == 0) {
+                self.lastNotifiedProgress[appId] = percentage
+                self.sendProgressNotification(for: appId, appName: item.appName, percentage: percentage)
+            }
         }
     }
 
@@ -143,8 +194,8 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
                 self.completionHandlers[appId]?(.success(destURL))
                 
                 HapticFeedback.success()
+                self.sendCompletionNotification(for: appId, appName: appName)
 
-                // Remove after 3 seconds from overlay
                 Task {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     self.activeDownloads.removeValue(forKey: appId)
@@ -156,6 +207,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
 
             self.tasksToAppIds.removeValue(forKey: taskId)
             self.completionHandlers.removeValue(forKey: appId)
+            self.lastNotifiedProgress.removeValue(forKey: appId)
         }
     }
 
@@ -173,6 +225,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
             self.completionHandlers[appId]?(.failure(error))
             self.tasksToAppIds.removeValue(forKey: taskId)
             self.completionHandlers.removeValue(forKey: appId)
+            self.lastNotifiedProgress.removeValue(forKey: appId)
         }
     }
 }

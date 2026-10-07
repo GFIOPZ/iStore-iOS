@@ -331,7 +331,12 @@ private struct ForgeRootView: View {
 
             if auth.isLoggedIn {
 
-                storeInterface
+                ZStack(alignment: .top) {
+                    storeInterface
+
+                    DownloadNotificationOverlay()
+                        .zIndex(999)
+                }
 
             } else {
 
