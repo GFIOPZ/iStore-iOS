@@ -119,7 +119,7 @@ struct NOVAAppDetailView: View {
                     Button {
                         BackgroundDownloadManager.shared.startDownload(
                             url: downloadURL,
-                            appId: app.bundleId.isEmpty ? app.name : app.bundleId,
+                            appId: app.id.isEmpty ? app.name : app.id,
                             appName: app.name,
                             iconURL: URL(string: app.icon)
                         )
