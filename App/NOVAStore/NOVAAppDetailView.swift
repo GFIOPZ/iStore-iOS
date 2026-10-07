@@ -116,10 +116,17 @@ struct NOVAAppDetailView: View {
                 // MARK: - Download
                 if let downloadURL = URL(string: app.ipaURL),
                    !app.ipaURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Link(destination: downloadURL) {
+                    Button {
+                        BackgroundDownloadManager.shared.startDownload(
+                            url: downloadURL,
+                            appId: app.bundleId.isEmpty ? app.name : app.bundleId,
+                            appName: app.name,
+                            iconURL: URL(string: app.icon)
+                        )
+                    } label: {
                         HStack {
                             Image(systemName: "arrow.down.circle.fill")
-                            Text("تحميل التطبيق")
+                            Text("تحميل التطبيق في الخلفية")
                             Spacer()
                             Image(systemName: "chevron.left")
                         }
