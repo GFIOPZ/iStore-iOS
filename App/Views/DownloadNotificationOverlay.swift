@@ -1,196 +1,187 @@
 import SwiftUI
 
-/// Elegant Floating Live Download Bar mirroring iOS Dynamic Island & Lock Screen style
-/// Displays real-time progress, file name, download percentage, and status message.
+/// Elegant Floating Live Download Bar mirroring iOS Dynamic Island & Lock Screen Live Activity style
+/// Matches the requested design:
+/// - Left: Unified NOVA Store Logo / App Icon (44x44 with rounded corners and subtle border)
+/// - Center: App/Game filename (e.g. 8_Ball_Pool10.ipa) and percentage (e.g. 9%)
+/// - Right: Circular progress loader with stop/cancel button in the center
 public struct DownloadNotificationOverlay: View {
     @ObservedObject private var manager = BackgroundDownloadManager.shared
 
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             ForEach(Array(manager.activeDownloads.values), id: \.id) { download in
-                downloadCard(for: download)
+                downloadCapsule(for: download)
                     .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
-                        removal: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9))
+                        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.92)),
+                        removal: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.90))
                     ))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 56) // Clean clearance below Dynamic Island and notch
-        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: manager.activeDownloads.keys.count)
+        .padding(.top, 54)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.activeDownloads.keys.count)
     }
 
     @ViewBuilder
-    private func downloadCard(for download: ActiveDownload) -> some View {
-        HStack(spacing: 13) {
-            // App Icon
-            Group {
-                if let iconURL = download.iconURL {
-                    AsyncImage(url: iconURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        default:
-                            fallbackIcon
-                        }
-                    }
+    private func downloadCapsule(for download: ActiveDownload) -> some View {
+        HStack(spacing: 14) {
+            appIconView(for: download)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+                )
+                .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(formattedFileName(for: download.appName))
+                    .font(.system(size: 15, weight: .semibold, design: .default))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                if case .completed = download.status {
+                    Text("100%")
+                        .font(.system(size: 13.5, weight: .medium, design: .default))
+                        .foregroundStyle(Color(hex: "34D399"))
+                } else if case .failed(let err) = download.status {
+                    Text(err)
+                        .font(.system(size: 12, weight: .medium, design: .default))
+                        .foregroundStyle(Color(hex: "F87171"))
+                        .lineLimit(1)
                 } else {
-                    fallbackIcon
+                    Text("\(Int(max(0, min(100, download.progress * 100))))%")
+                        .font(.system(size: 13.5, weight: .regular, design: .default))
+                        .foregroundStyle(Color.white.opacity(0.85))
                 }
             }
-            .frame(width: 44, height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.75)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
 
-            // Info & Progress Bar
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(download.appName.hasSuffix(".ipa") ? download.appName : "\(download.appName).ipa")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
+            Spacer(minLength: 8)
 
-                    Spacer()
+            Button {
+                HapticFeedback.light()
+                manager.cancelDownload(appId: download.id)
+            } label: {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.22), lineWidth: 3.2)
+                        .frame(width: 36, height: 36)
 
                     if case .completed = download.status {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color(hex: "34D399"))
-                            Text("100%")
-                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color(hex: "34D399"))
-                        }
+                        Circle()
+                            .fill(Color(hex: "10B981"))
+                            .frame(width: 36, height: 36)
+
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
                     } else {
-                        Text("\(Int(download.progress * 100))%")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.95))
-                    }
-                }
-
-                // Custom Animated Progress Bar
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.22))
-                            .frame(height: 6)
-
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(hex: "93C5FD"),
-                                        Color(hex: "60A5FA"),
-                                        Color.white
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
+                        Circle()
+                            .trim(from: 0.0, to: CGFloat(max(0.04, min(1.0, download.progress))))
+                            .stroke(
+                                Color.white,
+                                style: StrokeStyle(lineWidth: 3.2, lineCap: .round)
                             )
-                            .frame(width: max(6, geo.size.width * CGFloat(download.progress)), height: 6)
+                            .frame(width: 36, height: 36)
+                            .rotationEffect(.degrees(-90))
                             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: download.progress)
+
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Color.white)
+                            .frame(width: 11, height: 11)
                     }
                 }
-                .frame(height: 6)
-
-                // Subtitle / Status
-                HStack {
-                    switch download.status {
-                    case .downloading(_, let bytes, let total):
-                        if total > 0 {
-                            Text("\(formatBytes(bytes)) من \(formatBytes(total))")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.85))
-                        } else {
-                            Text("جارٍ التحميل في الخلفية...")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.85))
-                        }
-                    case .completed:
-                        Text("اكتمل التحميل! جارٍ تجهيز رسالة التثبيت...")
-                            .font(.system(size: 10.5, weight: .bold))
-                            .foregroundStyle(Color(hex: "A7F3D0"))
-                    case .failed(let err):
-                        Text("فشل: \(err)")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Color(hex: "FCA5A5"))
-                            .lineLimit(1)
-                    case .queued:
-                        Text("في الانتظار...")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.85))
-                    }
-                    Spacer()
-                }
+                .contentShape(Circle())
             }
-
-            // Cancel / Dismiss Button
-            if case .completed = download.status {
-                EmptyView()
-            } else {
-                Button {
-                    BackgroundDownloadManager.shared.cancelDownload(appId: download.id)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .frame(height: 68)
         .background(
             ZStack {
-                // Blur + Gradient
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(hex: "1E40AF").opacity(0.95),
-                                Color(hex: "1E3A8A").opacity(0.97)
+                                Color(hex: "0D1B2A").opacity(0.92),
+                                Color(hex: "1B263B").opacity(0.88),
+                                Color(hex: "0B132B").opacity(0.95)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
 
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.35),
-                                Color.white.opacity(0.12)
+                                Color.white.opacity(0.25),
+                                Color.white.opacity(0.08)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1
+                        lineWidth: 1.0
                     )
             }
         )
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: Color.black.opacity(0.28), radius: 16, y: 8)
-        .shadow(color: Color(hex: "1E40AF").opacity(0.3), radius: 20, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.black.opacity(0.40), radius: 14, x: 0, y: 7)
     }
 
-    private var fallbackIcon: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.white.opacity(0.18))
-            Image(systemName: "arrow.down.app.fill")
-                .foregroundStyle(.white)
-                .font(.system(size: 18))
+    @ViewBuilder
+    private func appIconView(for download: ActiveDownload) -> some View {
+        if let iconURL = download.iconURL {
+            AsyncImage(url: iconURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    storeFallbackLogo
+                }
+            }
+        } else {
+            storeFallbackLogo
         }
     }
 
-    private func formatBytes(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    private var storeFallbackLogo: some View {
+        Group {
+            if let uiImage = UIImage(named: "NOVAStoreLogo") ?? UIImage(named: "AppIcon") {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [Color(hex: "4C1D95"), Color(hex: "1E1B4B")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "arrow.down.app.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private func formattedFileName(for name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasSuffix(".ipa") {
+            return trimmed
+        }
+        return "\(trimmed).ipa"
+    }
+}
+
+private enum HapticFeedback {
+    @MainActor static func light() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }
