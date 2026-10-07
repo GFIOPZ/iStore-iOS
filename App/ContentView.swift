@@ -50,9 +50,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            ZStack(alignment: .top) {
                 ForgeBackdrop()
                     .ignoresSafeArea()
+
+                DownloadNotificationOverlay()
+                    .zIndex(999)
 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -217,6 +220,11 @@ struct ContentView: View {
                 if let pendingIPA = repoStore.pendingIPA {
                     await receiveDownloadedRepositoryIPA(pendingIPA)
                 }
+            }
+            .onReceive(BackgroundDownloadManager.shared.$latestCompletedFile) { completedURL in
+                guard let completedURL else { return }
+                stageIPA(completedURL, fallbackToSource: true, alreadyStaged: true)
+                BackgroundDownloadManager.shared.latestCompletedFile = nil
             }
             .onChange(of: repoStore.pendingIPA) { pendingIPA in
                 guard let pendingIPA else { return }
