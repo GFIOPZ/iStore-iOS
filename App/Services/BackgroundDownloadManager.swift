@@ -36,6 +36,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
     private var tasksToAppIds: [Int: String] = [:]
     private var completionHandlers: [String: (Result<URL, Error>) -> Void] = [:]
     private var lastNotifiedProgress: [String: Int] = [:]
+    private var cachedIconPaths: [String: URL] = [:]
 
     override private init() {
         super.init()
@@ -75,6 +76,11 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         activeDownloads[appId] = download
         lastNotifiedProgress[appId] = 0
 
+        // Cache icon locally for lock screen notifications
+        if let iconURL = iconURL {
+            fetchAndCacheIcon(from: iconURL, for: appId)
+        }
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 600
         let task = urlSession.downloadTask(with: request)
@@ -82,7 +88,7 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         task.resume()
 
         HapticFeedback.light()
-        sendProgressNotification(for: appId, appName: appName, percentage: 1)
+        sendProgressNotification(for: appId, appName: appName, percentage: 1, bytesWritten: 0, totalBytes: 0)
     }
 
     public func cancelDownload(appId: String) {
@@ -99,13 +105,51 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["dl_\(appId)"])
     }
 
+    private func fetchAndCacheIcon(from url: URL, for appId: String) {
+        Task.detached(priority: .background) {
+            guard let data = try? Data(contentsOf: url) else { return }
+            let tempDir = FileManager.default.temporaryDirectory
+            let iconFile = tempDir.appendingPathComponent("icon_\(appId).png")
+            try? data.write(to: iconFile, options: .atomic)
+            await MainActor.run {
+                BackgroundDownloadManager.shared.cachedIconPaths[appId] = iconFile
+            }
+        }
+    }
+
     // MARK: - Notifications
 
-    private func sendProgressNotification(for appId: String, appName: String, percentage: Int) {
+    private func makeProgressBarString(progress: Double) -> String {
+        let totalBlocks = 10
+        let filled = max(0, min(totalBlocks, Int(progress * Double(totalBlocks))))
+        let empty = totalBlocks - filled
+        return String(repeating: "▰", count: filled) + String(repeating: "▱", count: empty)
+    }
+
+    private func sendProgressNotification(
+        for appId: String,
+        appName: String,
+        percentage: Int,
+        bytesWritten: Int64,
+        totalBytes: Int64
+    ) {
         let content = UNMutableNotificationContent()
-        content.title = "جارٍ تحميل \(appName)"
-        content.body = "نسبة التقدم: \(percentage)%"
-        content.sound = nil
+        content.title = "\(appName) • \(percentage)%"
+        
+        let bar = makeProgressBarString(progress: Double(percentage) / 100.0)
+        if totalBytes > 0 {
+            let writtenStr = ByteCountFormatter.string(fromByteCount: bytesWritten, countStyle: .file)
+            let totalStr = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+            content.body = "[ \(bar) ] \(percentage)% • \(writtenStr) من \(totalStr)"
+        } else {
+            content.body = "[ \(bar) ] \(percentage)% • جارٍ التنزيل في الخلفية..."
+        }
+
+        if let iconPath = cachedIconPaths[appId],
+           FileManager.default.fileExists(atPath: iconPath.path),
+           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)", url: iconPath, options: nil) {
+            content.attachments = [attachment]
+        }
 
         let request = UNNotificationRequest(
             identifier: "dl_\(appId)",
@@ -117,9 +161,15 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
 
     private func sendCompletionNotification(for appId: String, appName: String) {
         let content = UNMutableNotificationContent()
-        content.title = "اكتمل التحميل بنجاح!"
-        content.body = "تم تنزيل \(appName). اضغط لفتح التطبيق وتثبيته."
+        content.title = "✅ اكتمل التحميل • \(appName)"
+        content.body = "اكتمل التحميل! جارٍ تجهيز رسالة التثبيت..."
         content.sound = .default
+
+        if let iconPath = cachedIconPaths[appId],
+           FileManager.default.fileExists(atPath: iconPath.path),
+           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)", url: iconPath, options: nil) {
+            content.attachments = [attachment]
+        }
 
         let request = UNNotificationRequest(
             identifier: "dl_\(appId)",
@@ -157,9 +207,15 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
             self.activeDownloads[appId] = item
 
             let last = self.lastNotifiedProgress[appId] ?? 0
-            if percentage >= last + 10 || (percentage > 0 && last == 0) {
+            if percentage >= last + 5 || (percentage > 0 && last == 0) {
                 self.lastNotifiedProgress[appId] = percentage
-                self.sendProgressNotification(for: appId, appName: item.appName, percentage: percentage)
+                self.sendProgressNotification(
+                    for: appId,
+                    appName: item.appName,
+                    percentage: percentage,
+                    bytesWritten: totalBytesWritten,
+                    totalBytes: totalBytesExpectedToWrite
+                )
             }
         }
     }
@@ -171,38 +227,61 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
     ) {
         let taskId = downloadTask.taskIdentifier
 
+        // Synchronously save the temporary file before exiting this delegate method
+        let downloadsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Downloads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+
+        let stagingFileName = "staging_\(taskId)_\(UUID().uuidString.prefix(6)).ipa"
+        let stagingURL = downloadsDir.appendingPathComponent(stagingFileName)
+
+        var copyError: Error?
+        do {
+            if FileManager.default.fileExists(atPath: stagingURL.path) {
+                try FileManager.default.removeItem(at: stagingURL)
+            }
+            try FileManager.default.copyItem(at: location, to: stagingURL)
+        } catch {
+            copyError = error
+        }
+
         Task { @MainActor in
             guard let appId = self.tasksToAppIds[taskId] else { return }
             let item = self.activeDownloads[appId]
             let appName = item?.appName ?? "App"
 
-            let downloadsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Downloads", isDirectory: true)
-            try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            if let copyError = copyError {
+                self.activeDownloads[appId]?.status = .failed("تعذر حفظ الملف: \(copyError.localizedDescription)")
+                self.completionHandlers[appId]?(.failure(copyError))
+                return
+            }
 
-            let safeName = appName.replacingOccurrences(of: " ", with: "-")
-            let destURL = downloadsDir.appendingPathComponent("\(safeName)-\(UUID().uuidString.prefix(6)).ipa")
+            let safeName = appName
+                .replacingOccurrences(of: " ", with: "-")
+                .replacingOccurrences(of: "/", with: "-")
+            let destURL = downloadsDir.appendingPathComponent("\(safeName)-\(UUID().uuidString.prefix(4)).ipa")
 
+            let finalURL: URL
             do {
                 if FileManager.default.fileExists(atPath: destURL.path) {
                     try FileManager.default.removeItem(at: destURL)
                 }
-                try FileManager.default.moveItem(at: location, to: destURL)
-
-                self.activeDownloads[appId]?.status = .completed(fileURL: destURL)
-                self.latestCompletedFile = destURL
-                self.completionHandlers[appId]?(.success(destURL))
-                
-                HapticFeedback.success()
-                self.sendCompletionNotification(for: appId, appName: appName)
-
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    self.activeDownloads.removeValue(forKey: appId)
-                }
+                try FileManager.default.moveItem(at: stagingURL, to: destURL)
+                finalURL = destURL
             } catch {
-                self.activeDownloads[appId]?.status = .failed(error.localizedDescription)
-                self.completionHandlers[appId]?(.failure(error))
+                finalURL = stagingURL
+            }
+
+            self.activeDownloads[appId]?.status = .completed(fileURL: finalURL)
+            self.latestCompletedFile = finalURL
+            self.completionHandlers[appId]?(.success(finalURL))
+            
+            HapticFeedback.success()
+            self.sendCompletionNotification(for: appId, appName: appName)
+
+            Task {
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                self.activeDownloads.removeValue(forKey: appId)
             }
 
             self.tasksToAppIds.removeValue(forKey: taskId)
