@@ -153,10 +153,25 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         }
     }
 
+    private func getOrCacheStoreLogo() -> URL? {
+        let tempDir = FileManager.default.temporaryDirectory
+        let logoFile = tempDir.appendingPathComponent("nova_store_logo.png")
+        if FileManager.default.fileExists(atPath: logoFile.path) {
+            return logoFile
+        }
+        if let image = UIImage(named: "NOVAStoreLogo") ?? UIImage(named: "AppIcon") {
+            if let data = image.pngData() {
+                try? data.write(to: logoFile, options: .atomic)
+                return logoFile
+            }
+        }
+        return nil
+    }
+
     // MARK: - Notifications
 
     private func makeProgressBarString(progress: Double) -> String {
-        let totalBlocks = 10
+        let totalBlocks = 12
         let filled = max(0, min(totalBlocks, Int(progress * Double(totalBlocks))))
         let empty = totalBlocks - filled
         return String(repeating: "▰", count: filled) + String(repeating: "▱", count: empty)
@@ -170,20 +185,23 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         totalBytes: Int64
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "\(appName) • \(percentage)%"
+        content.title = appName
+        content.subtitle = "NOVA STORE • جارٍ التحميل (\(percentage)%)"
         
         let bar = makeProgressBarString(progress: Double(percentage) / 100.0)
+        
         if totalBytes > 0 {
             let writtenStr = ByteCountFormatter.string(fromByteCount: bytesWritten, countStyle: .file)
             let totalStr = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
-            content.body = "[ \(bar) ] \(percentage)% • \(writtenStr) من \(totalStr)"
+            content.body = "\u{200E}\(bar)  \(percentage)%\nتم تحميل \(writtenStr) من \(totalStr)"
         } else {
-            content.body = "[ \(bar) ] \(percentage)% • جارٍ التنزيل..."
+            content.body = "\u{200E}\(bar)  \(percentage)%\nجارٍ الاتصال واستلام البيانات..."
         }
 
-        if let iconPath = cachedIconPaths[appId],
+        let iconPath = cachedIconPaths[appId] ?? getOrCacheStoreLogo()
+        if let iconPath = iconPath,
            FileManager.default.fileExists(atPath: iconPath.path),
-           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)", url: iconPath, options: nil) {
+           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)_\(percentage)", url: iconPath, options: nil) {
             content.attachments = [attachment]
         }
 
@@ -203,13 +221,15 @@ public final class BackgroundDownloadManager: NSObject, ObservableObject, URLSes
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["dl_\(appId)"])
 
         let content = UNMutableNotificationContent()
-        content.title = "اكتمل التنزيل بنجاح"
-        content.body = "تم تنزيل \(appName) وجاهز للتثبيت والتوقيع."
+        content.title = appName
+        content.subtitle = "NOVA STORE • اكتمل التحميل"
+        content.body = "تم تنزيل التطبيق بنجاح وهو الآن جاهز للتوقيع والتثبيت."
         content.sound = .default
 
-        if let iconPath = cachedIconPaths[appId],
+        let iconPath = cachedIconPaths[appId] ?? getOrCacheStoreLogo()
+        if let iconPath = iconPath,
            FileManager.default.fileExists(atPath: iconPath.path),
-           let attachment = try? UNNotificationAttachment(identifier: "icon_\(appId)", url: iconPath, options: nil) {
+           let attachment = try? UNNotificationAttachment(identifier: "icon_done_\(appId)", url: iconPath, options: nil) {
             content.attachments = [attachment]
         }
 
