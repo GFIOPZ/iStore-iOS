@@ -414,9 +414,9 @@ struct RepoAppDetailSheet: View {
         }
         .floatingGlassBackButton(action: { dismiss() })
         // A compact detail layout avoids an oversized empty tail below the info cards.
-        .presentationDetents([.height(620)])
+        .presentationDetents([.height(620), .large])
         .presentationCornerRadius(34)
-        .presentationDragIndicator(.hidden)
+        .presentationDragIndicator(.visible)
         .presentationBackground { ForgeBackdrop() }
         .alert(
             languageCode == AppLanguage.arabic.rawValue ? "تكرار التطبيق" : "Repeat app",
@@ -493,7 +493,33 @@ struct RepoAppDetailSheet: View {
     }
 
     private var appSummary: some View {
-        EmptyView()
+        let description = app.localizedDescription?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.alignright")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(T.accent)
+                Text(localized("About this app", "عن التطبيق"))
+                    .font(T.sans(15, .bold))
+                    .foregroundColor(T.ink)
+            }
+            Text(description.isEmpty
+                 ? localized("No description has been provided for this app yet.", "لم تتم إضافة وصف لهذا التطبيق بعد.")
+                 : description)
+                .font(T.sans(13, .medium))
+                .foregroundColor(description.isEmpty ? T.ink3 : T.ink2)
+                .multilineTextAlignment(languageCode == AppLanguage.arabic.rawValue ? .right : .leading)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: languageCode == AppLanguage.arabic.rawValue ? .trailing : .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .fClearGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, T.pad + 20)
+        .padding(.top, 16)
     }
 
     private var shortDivider: some View {
