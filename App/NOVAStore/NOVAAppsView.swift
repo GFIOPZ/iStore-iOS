@@ -13,6 +13,7 @@ struct NOVAAppsView: View {
     @State private var selectedApp: RepoApp?
     @State private var isRefreshing = false
     @State private var showExclusiveApps = false
+    @State private var selectedExclusiveCategoryID: String?
 
     // The hint is shown once per app launch, not every time the user changes tabs.
     @SceneStorage("nova.apps.exclusiveHintShown") private var hasShownExclusiveHint = false
@@ -89,10 +90,13 @@ struct NOVAAppsView: View {
     }
 
     private var filteredApps: [RepoApp] {
+        let categoryFiltered = showExclusiveApps && selectedExclusiveCategoryID != nil
+            ? baseApps.filter { $0.category == selectedExclusiveCategoryID }
+            : baseApps
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return baseApps }
+        guard !q.isEmpty else { return categoryFiltered }
 
-        return baseApps.filter { app in
+        return categoryFiltered.filter { app in
             app.name.localizedCaseInsensitiveContains(q) ||
             (app.developerName?.localizedCaseInsensitiveContains(q) ?? false) ||
             (app.localizedDescription?.localizedCaseInsensitiveContains(q) ?? false)
@@ -125,18 +129,26 @@ struct NOVAAppsView: View {
                         message: "اسحب للأسفل لتحديث المصادر."
                     )
 
-                } else if filteredApps.isEmpty {
-                    emptyState(
-                        icon: "magnifyingglass",
-                        title: "لا توجد نتائج",
-                        message: "جرّب البحث باسم تطبيق آخر."
-                    )
-
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(filteredApps) { app in
-                                waveRow(app)
+                        VStack(spacing: 10) {
+                            if showExclusiveApps {
+                                exclusiveCategoryPicker
+                            }
+
+                            if filteredApps.isEmpty {
+                                emptyState(
+                                    icon: "square.grid.2x2",
+                                    title: showExclusiveApps && selectedExclusiveCategoryID != nil ? "ماكو تطبيقات بهذا القسم" : "لا توجد نتائج",
+                                    message: showExclusiveApps && selectedExclusiveCategoryID != nil ? "اختار تصنيفاً آخر أو عيّن تصنيفاً لهذا التطبيق من لوحة التحكم." : "جرّب البحث باسم تطبيق آخر."
+                                )
+                                .frame(minHeight: 220)
+                            } else {
+                                LazyVStack(spacing: 2) {
+                                    ForEach(filteredApps) { app in
+                                        waveRow(app)
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -263,6 +275,7 @@ struct NOVAAppsView: View {
             Haptics.tap()
             withAnimation(.spring(response: 0.48, dampingFraction: 0.72)) {
                 showExclusiveApps.toggle()
+                selectedExclusiveCategoryID = nil
             }
         } label: {
             ZStack {
@@ -293,6 +306,71 @@ struct NOVAAppsView: View {
             .shadow(color: gradientStart.opacity(0.10), radius: 10, y: 4)
         }
         .buttonStyle(PressableStyle())
+    }
+
+    private var exclusiveCategoryPicker: some View {
+        let usedCategoryIDs = Set(exclusiveApps.compactMap(\.category))
+        let visibleCategories = manualApps.categories.filter { usedCategoryIDs.contains($0.id) }
+        let hasOtherCategory = usedCategoryIDs.contains("other") && !manualApps.categories.contains(where: { $0.id == "other" })
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryChip(id: nil, title: "الكل", icon: "square.grid.2x2.fill", count: exclusiveApps.count)
+
+                ForEach(visibleCategories) { category in
+                    categoryChip(
+                        id: category.id,
+                        title: category.nameAR.isEmpty ? category.nameEN : category.nameAR,
+                        icon: category.icon.isEmpty ? "square.grid.2x2" : category.icon,
+                        count: exclusiveApps.filter { $0.category == category.id }.count
+                    )
+                }
+
+                if hasOtherCategory {
+                    categoryChip(
+                        id: "other",
+                        title: "أخرى",
+                        icon: "square.grid.2x2",
+                        count: exclusiveApps.filter { $0.category == "other" }.count
+                    )
+                }
+            }
+            .padding(.vertical, 3)
+        }
+        .environment(\.layoutDirection, .rightToLeft)
+        .accessibilityLabel("تصنيفات التطبيقات الحصرية")
+    }
+
+    private func categoryChip(id: String?, title: String, icon: String, count: Int) -> some View {
+        let isSelected = selectedExclusiveCategoryID == id
+        return Button {
+            Haptics.tap()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedExclusiveCategoryID = id
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .opacity(0.78)
+            }
+            .foregroundStyle(isSelected ? Color.white : Color(hex: "6D28D9"))
+            .padding(.horizontal, 13)
+            .frame(height: 36)
+            .background {
+                Capsule().fill(isSelected ? AnyShapeStyle(brandGradient) : AnyShapeStyle(.ultraThinMaterial))
+            }
+            .overlay {
+                Capsule().stroke(isSelected ? Color.clear : gradientStart.opacity(0.18), lineWidth: 1)
+            }
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Wave rows
