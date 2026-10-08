@@ -510,7 +510,7 @@ struct RepoAppDetailSheet: View {
                  : description)
                 .font(T.sans(13, .medium))
                 .foregroundColor(description.isEmpty ? T.ink3 : T.ink2)
-                .multilineTextAlignment(languageCode == AppLanguage.arabic.rawValue ? .right : .leading)
+                .multilineTextAlignment(languageCode == AppLanguage.arabic.rawValue ? .trailing : .leading)
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: languageCode == AppLanguage.arabic.rawValue ? .trailing : .leading)
                 .fixedSize(horizontal: false, vertical: true)

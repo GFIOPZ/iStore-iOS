@@ -62,9 +62,16 @@ jobs:
             echo "Version:"
             echo "$version"
 
-            if [[ "$version" == 26.* ]]; then
+            # Prefer Xcode 26.5 because this runner image already includes
+            # the matching iOS 26.5 simulator runtime. Choosing the first
+            # lexical match (26.0.1) forced an unnecessary 8 GB download.
+            if [[ "$version" == "26.5" ]]; then
               XCODE_APP="$candidate"
               break
+            fi
+
+            if [[ -z "$XCODE_APP" && "$version" == 26.* ]]; then
+              XCODE_APP="$candidate"
             fi
           done
 
@@ -106,75 +113,28 @@ jobs:
 
 
       # ============================================
-      # Cache the iOS Simulator runtime
+      # Ensure a simulator runtime matching selected Xcode exists
       # ------------------------------------------------
-      # Downloading the matching simulator runtime (step
-      # below) can take several minutes. Caching it keyed
-      # to the exact Xcode build means later runs restore
-      # it from cache in seconds instead of re-downloading
-      # every time. The cache is invalidated automatically
-      # whenever the runner image's Xcode build changes.
+      # Prefer Xcode 26.5 above to use the 26.5 runtime already present
+      # on macos-26. Avoid downloading an 8 GB runtime on every cold cache.
       # ============================================
 
-      - name: Cache iOS Simulator runtime
-        id: simulator_runtime_cache
-        uses: actions/cache@v4
-        with:
-          path: /Library/Developer/CoreSimulator/Profiles/Runtimes
-          key: ios-simulator-runtime-macos26-${{ steps.select_xcode.outputs.xcode_build }}
-
-
-      # ============================================
-      # Ensure matching iOS Simulator runtime exists
-      # ------------------------------------------------
-      # Even for a DEVICE-ONLY archive build, Xcode's
-      # actool cross-checks installed simulator runtimes
-      # against the iphonesimulator SDK build version.
-      # On some macos-26 runner images the pre-installed
-      # runtimes (e.g. 23C54 / 23E254a / 23F77) do not
-      # match the SDK actool expects, which makes actool
-      # fail the whole archive with:
-      #
-      #   "No simulator runtime version from [...]
-      #    available to use with iphonesimulator SDK
-      #    version ..."
-      #
-      # This is a known runner-image issue
-      # (github.com/actions/runner-images issues
-      # #13317 / #13275). The fix is to make sure a
-      # matching runtime is present on disk before
-      # building, even though we never run on a
-      # simulator ourselves.
-      # ============================================
-
-      - name: Ensure matching iOS Simulator runtime is installed
+      - name: Verify matching iOS Simulator runtime
         shell: bash
-        env:
-          CACHE_HIT: ${{ steps.simulator_runtime_cache.outputs.cache-hit }}
         run: |
           set -euo pipefail
 
-          echo "========================================"
-          echo "SIMULATOR RUNTIMES BEFORE"
-          echo "========================================"
-          xcrun simctl runtime list || true
+          XCODE_VERSION="$(xcodebuild -version | head -n 1 | awk '{print $2}')"
+          RUNTIMES="$(xcrun simctl runtime list)"
+          echo "$RUNTIMES"
 
-          if [ "$CACHE_HIT" = "true" ]; then
-            echo ""
-            echo "Cache hit: restored simulator runtime from cache, skipping download."
+          XCODE_MINOR="$(printf '%s' "$XCODE_VERSION" | awk -F. '{print $1 "." $2}')"
+          if ! printf '%s\n' "$RUNTIMES" | grep -F "iOS $XCODE_MINOR" >/dev/null; then
+            echo "Matching iOS $XCODE_MINOR runtime is missing; installing the matching platform."
+            xcodebuild -downloadPlatform iOS
           else
-            echo ""
-            echo "Cache miss: downloading the matching iOS platform/runtime..."
-            echo "(this can take several minutes on a cold cache; later runs will be fast)"
-            xcodebuild -downloadPlatform iOS || echo "Download attempt finished (may already be present or unavailable)."
+            echo "Matching iOS $XCODE_MINOR runtime is already installed; skipping download."
           fi
-
-          echo ""
-          echo "========================================"
-          echo "SIMULATOR RUNTIMES AFTER"
-          echo "========================================"
-          xcrun simctl runtime list || true
-
 
       # ============================================
       # Verify device SDK
@@ -262,7 +222,7 @@ jobs:
           set -euo pipefail
 
           if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
           fi
 
           xcodegen version
@@ -303,15 +263,6 @@ jobs:
           echo "========================================"
 
           xcodebuild -version
-
-          echo ""
-          echo "========================================"
-          echo "PROJECT TARGETS"
-          echo "========================================"
-
-          xcodebuild \
-            -project iStore.xcodeproj \
-            -list
 
           echo ""
           echo "========================================"
@@ -357,6 +308,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             ONLY_ACTIVE_ARCH=NO \
             ARCHS=arm64 \
             archive
